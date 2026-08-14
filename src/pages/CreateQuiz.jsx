@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { CATEGORIES } from '../data/quizzes';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useParams } from 'react-router-dom';
+import { CATEGORIES, getQuizById, saveCustomQuiz, deleteCustomQuiz } from '../data/quizzes';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck } from 'lucide-react';
+import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CreateQuiz = () => {
   const navigate = useNavigate();
-  
+  const { id } = useParams();
+
+  const isEditing = Boolean(id && id !== 'new');
+
   // Creation mode state: 'manual' | 'json'
   const [creationMode, setCreationMode] = useState('manual');
   
@@ -36,6 +39,34 @@ export const CreateQuiz = () => {
   ]);
   
   const [errors, setErrors] = useState({});
+
+  // Effect to load existing quiz data when in editing mode
+  useEffect(() => {
+    if (isEditing) {
+      const existingQuiz = getQuizById(id);
+      if (existingQuiz) {
+        setTitle(existingQuiz.title || '');
+        setDescription(existingQuiz.description || '');
+        setCategoryId(existingQuiz.categoryId || CATEGORIES[0].id);
+        setDifficulty(existingQuiz.difficulty || 'Medium');
+        setDuration(existingQuiz.duration || 10);
+        if (Array.isArray(existingQuiz.questions) && existingQuiz.questions.length > 0) {
+          setQuestions(existingQuiz.questions);
+        }
+        // Set jsonText prefilled
+        const templateObj = {
+          title: existingQuiz.title,
+          description: existingQuiz.description,
+          categoryId: existingQuiz.categoryId,
+          difficulty: existingQuiz.difficulty,
+          duration: existingQuiz.duration,
+          questions: existingQuiz.questions
+        };
+        setJsonText(JSON.stringify(templateObj, null, 2));
+      }
+    }
+  }, [id, isEditing]);
+
 
   const sampleJsonTemplate = `{
   "title": "Node.js Event Loop Masterclass",
@@ -291,9 +322,9 @@ export const CreateQuiz = () => {
       });
 
       // 3. Construct and Save Quiz
-      const generatedId = `custom-${Date.now()}`;
+      const targetId = isEditing ? id : `custom-${Date.now()}`;
       const newQuiz = {
-        id: generatedId,
+        id: targetId,
         categoryId: matchedCat.id,
         category: matchedCat.name,
         title: parsed.title.trim(),
@@ -304,16 +335,23 @@ export const CreateQuiz = () => {
         questions: formattedQuestions
       };
 
-      const existing = localStorage.getItem('quizguard_custom_quizzes_v1');
-      const list = existing ? JSON.parse(existing) : [];
-      list.push(newQuiz);
-      localStorage.setItem('quizguard_custom_quizzes_v1', JSON.stringify(list));
+      saveCustomQuiz(newQuiz);
 
-      alert(`Success! Imported "${newQuiz.title}" under category "${matchedCat.name}" with ${newQuiz.totalQuestions} questions.`);
+      alert(`Success! ${isEditing ? 'Updated' : 'Imported'} "${newQuiz.title}" under category "${matchedCat.name}" with ${newQuiz.totalQuestions} questions.`);
       navigate('/categories');
 
     } catch (err) {
       setJsonError(err.message || "Invalid JSON syntax.");
+    }
+  };
+
+  // Delete quiz handler
+  const handleDeleteQuiz = () => {
+    if (!isEditing || !id) return;
+    if (window.confirm(`Are you sure you want to delete "${title || 'this quiz'}"? This action cannot be undone.`)) {
+      deleteCustomQuiz(id);
+      alert("Quiz deleted successfully.");
+      navigate('/categories');
     }
   };
 
@@ -364,7 +402,7 @@ export const CreateQuiz = () => {
     // 3. Assemble and save the quiz
     const categoryObj = CATEGORIES.find(c => c.id === categoryId);
     const categoryName = categoryObj ? categoryObj.name : 'General';
-    const generatedId = `custom-${Date.now()}`;
+    const targetId = isEditing ? id : `custom-${Date.now()}`;
 
     const formattedQuestions = questions.map((q, idx) => ({
       id: 1000 + idx, // Simple ID spacing
@@ -375,7 +413,7 @@ export const CreateQuiz = () => {
     }));
 
     const newQuiz = {
-      id: generatedId,
+      id: targetId,
       categoryId,
       category: categoryName,
       title: title.trim(),
@@ -387,18 +425,16 @@ export const CreateQuiz = () => {
     };
 
     try {
-      const existing = localStorage.getItem('quizguard_custom_quizzes_v1');
-      const list = existing ? JSON.parse(existing) : [];
-      list.push(newQuiz);
-      localStorage.setItem('quizguard_custom_quizzes_v1', JSON.stringify(list));
+      saveCustomQuiz(newQuiz);
       
-      alert(`Success! Quiz "${title}" created successfully.`);
+      alert(`Success! Quiz "${title}" ${isEditing ? 'updated' : 'created'} successfully.`);
       navigate('/categories');
     } catch (err) {
       console.error(err);
       alert("Failed to save quiz. LocalStorage might be full.");
     }
   };
+
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -410,18 +446,34 @@ export const CreateQuiz = () => {
       </Link>
 
       {/* Header Description */}
-      <div className="space-y-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20 text-xs font-semibold">
-          <Sparkles className="w-4 h-4 text-brand-400" />
-          <span>Interactive Quiz Builder</span>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20 text-xs font-semibold">
+            {isEditing ? <Edit3 className="w-4 h-4 text-brand-400" /> : <Sparkles className="w-4 h-4 text-brand-400" />}
+            <span>{isEditing ? 'Quiz Editor Engine' : 'Interactive Quiz Builder'}</span>
+          </div>
+          <h1 className="font-display font-black text-3xl sm:text-4xl text-white tracking-tight">
+            {isEditing ? `Edit Quiz: ${title || 'Loading...'}` : 'Create Custom Quiz'}
+          </h1>
+          <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
+            {isEditing
+              ? 'Update metadata, add or remove questions, edit answer options, or modify the JSON schema directly.'
+              : 'Create custom assessments either by typing questions in the form, or by pasting a JSON configuration block (perfect for importing hundreds of questions instantly).'}
+          </p>
         </div>
-        <h1 className="font-display font-black text-3xl sm:text-4xl text-white tracking-tight">
-          Create Custom Quiz
-        </h1>
-        <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
-          Create custom assessments either by typing questions in the form, or by pasting a JSON configuration block (perfect for importing hundreds of questions instantly).
-        </p>
+
+        {isEditing && (
+          <button
+            type="button"
+            onClick={handleDeleteQuiz}
+            className="self-start md:self-center px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 transition-all"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <span>Delete Quiz</span>
+          </button>
+        )}
       </div>
+
 
       {/* TOGGLE SELECTOR MODE */}
       <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800/80 max-w-md">

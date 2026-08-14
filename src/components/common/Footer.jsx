@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ShieldCheck, Heart, Github, Twitter, Linkedin, ExternalLink } from 'lucide-react';
+import { Link001, Link002, Link003, Link004 } from '../ui/skiper-ui/skiper40';
 
 export const Footer = () => {
   return (
@@ -25,10 +26,10 @@ export const Footer = () => {
           <div>
             <h4 className="font-display font-semibold text-sm text-white uppercase tracking-wider mb-4">Navigation</h4>
             <ul className="space-y-2.5 text-xs">
-              <li><Link to="/" className="hover:text-brand-400 transition-colors">Home Landing</Link></li>
-              <li><Link to="/categories" className="hover:text-brand-400 transition-colors">Quiz Categories</Link></li>
-              <li><Link to="/history" className="hover:text-brand-400 transition-colors">Attempt History</Link></li>
-              <li><Link to="/about" className="hover:text-brand-400 transition-colors">About & Security Model</Link></li>
+              <li><Link001 to="/" className="hover:text-brand-400">Home Landing</Link001></li>
+              <li><Link001 to="/categories" className="hover:text-brand-400">Quiz Categories</Link001></li>
+              <li><Link001 to="/history" className="hover:text-brand-400">Attempt History</Link001></li>
+              <li><Link001 to="/about" className="hover:text-brand-400">About & Security Model</Link001></li>
             </ul>
           </div>
 
@@ -36,12 +37,13 @@ export const Footer = () => {
           <div>
             <h4 className="font-display font-semibold text-sm text-white uppercase tracking-wider mb-4">Quiz Categories</h4>
             <ul className="space-y-2.5 text-xs">
-              <li><Link to="/categories" className="hover:text-brand-400 transition-colors">JavaScript & ES6+</Link></li>
-              <li><Link to="/categories" className="hover:text-brand-400 transition-colors">React Architecture</Link></li>
-              <li><Link to="/categories" className="hover:text-brand-400 transition-colors">HTML5 & Modern CSS3</Link></li>
-              <li><Link to="/categories" className="hover:text-brand-400 transition-colors">Aptitude & Logic</Link></li>
+              <li><Link002 to="/categories" className="hover:text-brand-400">JavaScript & ES6+</Link002></li>
+              <li><Link002 to="/categories" className="hover:text-brand-400">React Architecture</Link002></li>
+              <li><Link002 to="/categories" className="hover:text-brand-400">HTML5 & Modern CSS3</Link002></li>
+              <li><Link002 to="/categories" className="hover:text-brand-400">Aptitude & Logic</Link002></li>
             </ul>
           </div>
+
 
           {/* Col 4: Disclaimer & Security Note */}
           <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-2 text-xs">

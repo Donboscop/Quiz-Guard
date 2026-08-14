@@ -20,11 +20,12 @@ export const Navbar = () => {
   const navLinks = [
     { path: '/', label: 'Home', icon: ShieldCheck },
     { path: '/categories', label: 'Categories', icon: BookOpen },
-    { path: '/create', label: 'Create Quiz', icon: PlusCircle },
+    { path: '/edit/new', label: 'Create Quiz', icon: PlusCircle },
     { path: '/contest', label: 'Live Arena', icon: Users },
     { path: '/history', label: 'Attempt History', icon: History, badge: attempts.length },
     { path: '/about', label: 'About & Security', icon: Info },
   ];
+
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-all">

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
-import { Clock, HelpCircle, ArrowRight, Code2, Atom, Palette, Globe2, BrainCircuit, Cloud, Cpu } from 'lucide-react';
+import { Clock, HelpCircle, ArrowRight, Code2, Atom, Palette, Globe2, BrainCircuit, Cloud, Cpu, Edit3 } from 'lucide-react';
 
 const categoryIcons = {
   Code2,
@@ -30,9 +30,18 @@ export const QuizCard = ({ quiz }) => {
           <Badge variant="brand" size="sm">
             {quiz.category}
           </Badge>
-          <Badge variant={difficultyVariants[quiz.difficulty] || 'neutral'} size="sm">
-            {quiz.difficulty}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Link
+              to={`/edit/${quiz.id}`}
+              className="p-1 rounded-md text-slate-400 hover:text-brand-300 hover:bg-slate-800/80 transition-colors"
+              title="Edit Quiz"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </Link>
+            <Badge variant={difficultyVariants[quiz.difficulty] || 'neutral'} size="sm">
+              {quiz.difficulty}
+            </Badge>
+          </div>
         </div>
 
         {/* Title & Description */}
@@ -58,9 +67,9 @@ export const QuizCard = ({ quiz }) => {
         </div>
       </div>
 
-      {/* Start Button */}
-      <div className="pt-6">
-        <Link to={`/quiz/${quiz.id}/instructions`} className="block">
+      {/* Action Buttons */}
+      <div className="pt-6 flex items-center gap-2">
+        <Link to={`/quiz/${quiz.id}/instructions`} className="flex-1">
           <Button
             variant="primary"
             size="md"
@@ -70,7 +79,17 @@ export const QuizCard = ({ quiz }) => {
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Button>
         </Link>
+        <Link to={`/edit/${quiz.id}`}>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={Edit3}
+            title="Edit Quiz"
+            className="px-3"
+          />
+        </Link>
       </div>
     </Card>
   );
 };
+

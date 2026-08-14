@@ -5,6 +5,7 @@ import { ShieldCheck, Sparkles, Clock, Eye, BarChart3, CheckCircle2, ArrowRight,
 import { Button } from '../components/common/Button';
 import { QuizCard } from '../components/quiz/QuizCard';
 import { getQuizzesList } from '../data/quizzes';
+import { Skiper40 } from '../components/ui/skiper-ui/skiper40';
 
 export const Home = () => {
   const featuredQuizzes = getQuizzesList().slice(0, 3);
@@ -80,9 +81,9 @@ export const Home = () => {
                 Start a Quiz
               </Button>
             </Link>
-            <a href="#how-it-works">
+            <a href="#skiper-animation">
               <Button size="lg" variant="secondary" icon={Play} className="w-full sm:w-auto">
-                Explore How It Works
+                Try Skiper40 Animations
               </Button>
             </a>
           </motion.div>
@@ -114,8 +115,14 @@ export const Home = () => {
         </div>
       </section>
 
+      {/* SKIPER40 ANIMATED LINKS SECTION */}
+      <section id="skiper-animation" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Skiper40 />
+      </section>
+
       {/* FEATURE HIGHLIGHTS */}
       <section id="features" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
         <div className="text-center space-y-4 mb-14">
           <h2 className="font-display font-bold text-3xl sm:text-4xl text-white">
             Engineered for Integrity & Speed

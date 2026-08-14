@@ -644,6 +644,47 @@ export const getCustomQuizzes = () => {
   }
 };
 
+export const saveCustomQuiz = (quizData) => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const existing = getCustomQuizzes();
+    const index = existing.findIndex(q => q.id === quizData.id);
+    let updated;
+    const targetId = quizData.id || `custom-${Date.now()}`;
+    const formattedQuiz = {
+      ...quizData,
+      id: targetId,
+      isCustom: true,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (index >= 0) {
+      updated = [...existing];
+      updated[index] = formattedQuiz;
+    } else {
+      updated = [formattedQuiz, ...existing];
+    }
+    window.localStorage.setItem('quizguard_custom_quizzes_v1', JSON.stringify(updated));
+    return targetId;
+  } catch (e) {
+    console.error('Error saving custom quiz:', e);
+    return null;
+  }
+};
+
+export const deleteCustomQuiz = (id) => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const existing = getCustomQuizzes();
+    const filtered = existing.filter(q => q.id !== id);
+    window.localStorage.setItem('quizguard_custom_quizzes_v1', JSON.stringify(filtered));
+    return true;
+  } catch (e) {
+    console.error('Error deleting custom quiz:', e);
+    return false;
+  }
+};
+
 export const getQuizzesList = () => {
   return [...STATIC_QUIZZES, ...getCustomQuizzes()];
 };
@@ -655,3 +696,4 @@ export const getQuizById = (id) => {
 export const getQuizzesByCategory = (catId) => {
   return getQuizzesList().filter(q => q.categoryId === catId);
 };
+

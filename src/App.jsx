@@ -77,7 +77,13 @@ export function App() {
                 <Route path="/history" element={<History />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/create" element={<CreateQuiz />} />
+                <Route path="/edit/new" element={<CreateQuiz />} />
+                <Route path="/quiz/edit/new" element={<CreateQuiz />} />
+                <Route path="/edit/:id" element={<CreateQuiz />} />
+                <Route path="/quiz/:id/edit" element={<CreateQuiz />} />
+                <Route path="/quiz/edit/:id" element={<CreateQuiz />} />
                 <Route path="/contest" element={<ContestLobby />} />
+
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </div>

@@ -1,7 +1,8 @@
 import React from 'react';
-import { ShieldCheck, Info, Eye, Lock, Smartphone, Cpu, CheckCircle2, HelpCircle, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Info, Eye, Lock, Smartphone, Cpu, CheckCircle2, HelpCircle, AlertTriangle, Sparkles } from 'lucide-react';
 import { Card } from '../components/common/Card';
 import { motion } from 'framer-motion';
+import { Skiper40 } from '../components/ui/skiper-ui/skiper40';
 
 export const About = () => {
   return (
@@ -20,6 +21,15 @@ export const About = () => {
           Discover how our frontend proctoring engine maintains candidate focus during online assessments without server overhead.
         </p>
       </div>
+
+      {/* Skiper40 Animation Showcase Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Skiper40 />
+      </motion.div>
 
       {/* MANDATORY HONESTY NOTE DISCLAIMER */}
       <motion.div
@@ -138,3 +148,4 @@ export const About = () => {
     </div>
   );
 };
+

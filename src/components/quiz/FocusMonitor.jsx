@@ -8,7 +8,7 @@ export const FocusMonitor = ({ quizContainerRef, isActive = true }) => {
   
   // Boundary monitoring state
   const [isMouseOutside, setIsMouseOutside] = useState(false);
-  const [graceCountdown, setGraceCountdown] = useState(2);
+  const [graceCountdown, setGraceCountdown] = useState(4);
   const [isMobile, setIsMobile] = useState(false);
 
   const graceTimerRef = useRef(null);
@@ -58,17 +58,17 @@ export const FocusMonitor = ({ quizContainerRef, isActive = true }) => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [isActive, sessionStatus, isMobile, isMouseOutside, quizContainerRef]);
 
-  // 2. GRACE PERIOD COUNTDOWN TIMER (2...1...0) FOR BOUNDARY EXIT
+  // 2. GRACE PERIOD COUNTDOWN TIMER (4...3...2...1...0) FOR BOUNDARY EXIT
   useEffect(() => {
     if (isMouseOutside && sessionStatus === 'in-progress') {
-      setGraceCountdown(2);
+      setGraceCountdown(4);
       
       graceTimerRef.current = setInterval(() => {
         setGraceCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(graceTimerRef.current);
             // Count expired: TERMINATE TEST!
-            terminateQuiz("Mouse cursor exited the designated test boundary area for longer than 2 seconds.");
+            terminateQuiz("Mouse cursor exited the designated test boundary area for longer than 4 seconds.");
             return 0;
           }
           return prev - 1;
@@ -79,7 +79,7 @@ export const FocusMonitor = ({ quizContainerRef, isActive = true }) => {
       if (graceTimerRef.current) {
         clearInterval(graceTimerRef.current);
       }
-      setGraceCountdown(2);
+      setGraceCountdown(4);
     }
 
     return () => {

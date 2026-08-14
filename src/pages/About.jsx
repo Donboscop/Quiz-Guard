@@ -55,7 +55,7 @@ export const About = () => {
               Pointer Boundary Tracking
             </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Monitors the cursor position relative to the proctored test container using <code className="text-brand-300 font-mono">getBoundingClientRect()</code>. If the cursor leaves the test boundary, a 2-second grace period activates before termination.
+              Monitors the cursor position relative to the proctored test container using <code className="text-brand-300 font-mono">getBoundingClientRect()</code>. If the cursor leaves the test boundary, a 4-second grace period activates before termination.
             </p>
           </Card>
 

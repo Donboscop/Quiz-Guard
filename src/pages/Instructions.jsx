@@ -105,7 +105,7 @@ export const Instructions = () => {
                 <span>2. Mouse Boundary Enforcement</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Your cursor must stay inside the active test area. Exiting the boundary gives a 2-second grace period; failing to return inside will immediately terminate the test.
+                Your cursor must stay inside the active test area. Exiting the boundary gives a 4-second grace period; failing to return inside will immediately terminate the test.
               </p>
             </div>
 

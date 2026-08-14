@@ -89,10 +89,15 @@ export const QuizTest = () => {
               <h1 className="font-display font-bold text-sm sm:text-base text-white line-clamp-1">
                 {activeQuiz.title}
               </h1>
-              <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-                Active Proctored Session
-              </span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  Active Proctored Session
+                </span>
+                <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                  Anti-AI & Side-Panel Shield Active
+                </span>
+              </div>
             </div>
           </div>
 

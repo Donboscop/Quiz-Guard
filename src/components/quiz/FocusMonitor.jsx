@@ -94,7 +94,7 @@ export const FocusMonitor = ({ quizContainerRef, isActive = true }) => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         issueFocusWarning(
-          "Tab Switch / Window Defocus Detected",
+          "Tab Switch Detected",
           "Navigating away from the active quiz tab violates test proctoring rules. Repeated violations will immediately terminate your attempt."
         );
       }
@@ -103,6 +103,56 @@ export const FocusMonitor = ({ quizContainerRef, isActive = true }) => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isActive, sessionStatus, issueFocusWarning]);
+
+  // 4. WINDOW BLUR / SIDE PANEL DEFOCUS MONITORING
+  useEffect(() => {
+    if (!isActive || sessionStatus !== 'in-progress') return;
+
+    const handleWindowBlur = () => {
+      issueFocusWarning(
+        "Side Panel / External Defocus Detected",
+        "Focus was lost to an external panel or window (e.g. Ask Gemini, browser side panel, extension, or another app). Continued defocus will terminate your attempt."
+      );
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => window.removeEventListener('blur', handleWindowBlur);
+  }, [isActive, sessionStatus, issueFocusWarning]);
+
+  // 5. CLIPBOARD & DEVTOOLS PROTECTION (Anti-Copy / Anti-Paste / Anti-Shortcut)
+  useEffect(() => {
+    if (!isActive || sessionStatus !== 'in-progress') return;
+
+    const preventAction = (e) => {
+      e.preventDefault();
+    };
+
+    const handleKeyDown = (e) => {
+      const key = e.key.toLowerCase();
+      // Block Ctrl/Cmd + C, V, X, U, A and F12 / DevTools
+      if (
+        ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x', 'u', 'a'].includes(key)) ||
+        e.key === 'F12' ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'c', 'j'].includes(key))
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('copy', preventAction);
+    document.addEventListener('cut', preventAction);
+    document.addEventListener('contextmenu', preventAction);
+    document.addEventListener('selectstart', preventAction);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('copy', preventAction);
+      document.removeEventListener('cut', preventAction);
+      document.removeEventListener('contextmenu', preventAction);
+      document.removeEventListener('selectstart', preventAction);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isActive, sessionStatus]);
 
   if (!isActive || sessionStatus !== 'in-progress') return null;
 

@@ -156,78 +156,150 @@ export const CreateQuiz = () => {
     setQuestions(updated);
   };
 
+  // Helper to resolve category from ID, name, or alias flexibly
+  const resolveCategory = (input) => {
+    if (!input || typeof input !== 'string') return CATEGORIES[0];
+    const rawTrimmed = input.trim();
+    const cleaned = rawTrimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // 1. Exact or case-insensitive ID match
+    const byId = CATEGORIES.find(c => c.id.toLowerCase() === rawTrimmed.toLowerCase());
+    if (byId) return byId;
+
+    // 2. Name match (exact or cleaned)
+    const byName = CATEGORIES.find(c => {
+      const cNameCleaned = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return c.name.toLowerCase() === rawTrimmed.toLowerCase() || (cleaned && cNameCleaned === cleaned);
+    });
+    if (byName) return byName;
+
+    // 3. Known Aliases
+    const ALIAS_MAP = {
+      js: 'js', javascript: 'js', node: 'js', nodejs: 'js', es6: 'js', express: 'js', typescript: 'js', ts: 'js',
+      react: 'react', reactjs: 'react', jsx: 'react', frontendreact: 'react',
+      web: 'web', html: 'web', css: 'web', htmlcss: 'web', html5: 'web', css3: 'web', frontend: 'web', webdev: 'web',
+      gk: 'gk', generalknowledge: 'gk', general: 'gk', world: 'gk', trivia: 'gk',
+      aptitude: 'aptitude', logic: 'aptitude', reasoning: 'aptitude', math: 'aptitude', aptitudelogic: 'aptitude',
+      cloud: 'cloud', aws: 'cloud', azure: 'cloud', gcp: 'cloud', devops: 'cloud', serverless: 'cloud', cloudcomputing: 'cloud',
+      cs: 'cs', computerscience: 'cs', dsa: 'cs', algo: 'cs', programming: 'cs', database: 'cs', dbms: 'cs'
+    };
+
+    if (ALIAS_MAP[cleaned]) {
+      const matched = CATEGORIES.find(c => c.id === ALIAS_MAP[cleaned]);
+      if (matched) return matched;
+    }
+
+    // 4. Substring match
+    const partial = CATEGORIES.find(c => 
+      cleaned && (cleaned.includes(c.id.toLowerCase()) || c.name.toLowerCase().includes(cleaned))
+    );
+    if (partial) return partial;
+
+    // Fallback safely to Computer Science (or first category)
+    return CATEGORIES.find(c => c.id === 'cs') || CATEGORIES[0];
+  };
+
   // Handle JSON submission
   const handleJsonSubmit = (e) => {
     e.preventDefault();
     setJsonError(null);
 
     try {
-      const parsed = JSON.parse(jsonText);
-      
-      // 1. Schema Validation
-      if (!parsed.title || typeof parsed.title !== 'string') {
-        throw new Error("Invalid or missing 'title' (string required).");
-      }
-      if (!parsed.description || typeof parsed.description !== 'string') {
-        throw new Error("Invalid or missing 'description' (string required).");
-      }
-      if (!parsed.categoryId || typeof parsed.categoryId !== 'string') {
-        throw new Error("Invalid or missing 'categoryId' (string required).");
-      }
-      
-      const matchedCat = CATEGORIES.find(c => c.id === parsed.categoryId);
-      if (!matchedCat) {
-        throw new Error(`Invalid 'categoryId'. Must be one of: ${CATEGORIES.map(c => c.id).join(', ')}.`);
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch (syntaxErr) {
+        throw new Error(`JSON Formatting Error: ${syntaxErr.message}. Please verify quotes and commas.`);
       }
 
-      if (!parsed.difficulty || !['Easy', 'Medium', 'Hard'].includes(parsed.difficulty)) {
-        throw new Error("Invalid or missing 'difficulty'. Must be 'Easy', 'Medium', or 'Hard'.");
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error("Invalid JSON structure. Root element must be an object { ... }.");
       }
 
-      if (typeof parsed.duration !== 'number' || parsed.duration <= 0) {
-        throw new Error("Invalid or missing 'duration'. Must be a positive number (minutes).");
+      // 1. Validate & Normalize Metadata
+      if (!parsed.title || typeof parsed.title !== 'string' || !parsed.title.trim()) {
+        throw new Error("Invalid or missing 'title' (non-empty string required).");
       }
+
+      const matchedCat = resolveCategory(parsed.categoryId);
+
+      let normalizedDifficulty = 'Medium';
+      if (parsed.difficulty && typeof parsed.difficulty === 'string') {
+        const d = parsed.difficulty.trim().toLowerCase();
+        if (d === 'easy') normalizedDifficulty = 'Easy';
+        else if (d === 'hard') normalizedDifficulty = 'Hard';
+        else if (d === 'medium') normalizedDifficulty = 'Medium';
+      }
+
+      let normalizedDuration = 10;
+      if (typeof parsed.duration === 'number' && parsed.duration > 0) {
+        normalizedDuration = Math.round(parsed.duration);
+      } else if (parsed.duration && !isNaN(parseInt(parsed.duration, 10))) {
+        const parsedDur = parseInt(parsed.duration, 10);
+        if (parsedDur > 0) normalizedDuration = parsedDur;
+      }
+
+      const normalizedDescription = (parsed.description && typeof parsed.description === 'string' && parsed.description.trim())
+        ? parsed.description.trim()
+        : `Assessment for ${parsed.title.trim()} in ${matchedCat.name}.`;
 
       if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-        throw new Error("Invalid or missing 'questions'. Must be a non-empty array.");
+        throw new Error("Invalid or missing 'questions'. Must be a non-empty array of question objects.");
       }
 
-      // Validate each question
-      parsed.questions.forEach((q, idx) => {
-        if (!q.question || typeof q.question !== 'string') {
+      // 2. Validate & Format Questions
+      const formattedQuestions = parsed.questions.map((q, idx) => {
+        if (!q || typeof q !== 'object') {
+          throw new Error(`Question ${idx + 1}: Must be an object.`);
+        }
+        if (!q.question || typeof q.question !== 'string' || !q.question.trim()) {
           throw new Error(`Question ${idx + 1}: Invalid or missing 'question' statement.`);
         }
-        if (!Array.isArray(q.options) || q.options.length < 2) {
-          throw new Error(`Question ${idx + 1}: 'options' must be an array of at least 2 strings.`);
+
+        let opts = [];
+        if (Array.isArray(q.options)) {
+          opts = q.options.map(o => (typeof o === 'string' ? o.trim() : String(o).trim())).filter(Boolean);
         }
-        q.options.forEach((opt, optIdx) => {
-          if (typeof opt !== 'string' || !opt.trim()) {
-            throw new Error(`Question ${idx + 1}, Option ${optIdx + 1}: Option text cannot be empty and must be a string.`);
+        if (opts.length < 2) {
+          throw new Error(`Question ${idx + 1}: 'options' must contain at least 2 valid string options.`);
+        }
+
+        let answerIndex = 0;
+        if (typeof q.answer === 'number' && q.answer >= 0 && q.answer < opts.length) {
+          answerIndex = Math.floor(q.answer);
+        } else if (typeof q.answer === 'string') {
+          const parsedIdx = parseInt(q.answer.trim(), 10);
+          if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < opts.length) {
+            answerIndex = parsedIdx;
+          } else {
+            const matchedOptIdx = opts.findIndex(opt => opt.toLowerCase() === q.answer.trim().toLowerCase());
+            if (matchedOptIdx !== -1) {
+              answerIndex = matchedOptIdx;
+            }
           }
-        });
-        if (typeof q.answer !== 'number' || q.answer < 0 || q.answer >= q.options.length) {
-          throw new Error(`Question ${idx + 1}: 'answer' must be a valid option index (0 to ${q.options.length - 1}).`);
         }
+
+        return {
+          id: 2000 + idx,
+          question: q.question.trim(),
+          options: opts,
+          answer: answerIndex,
+          explanation: (q.explanation && typeof q.explanation === 'string' && q.explanation.trim()) 
+            ? q.explanation.trim() 
+            : "Correct answer verified."
+        };
       });
 
-      // 2. Format and Save Quiz
+      // 3. Construct and Save Quiz
       const generatedId = `custom-${Date.now()}`;
-      const formattedQuestions = parsed.questions.map((q, idx) => ({
-        id: 2000 + idx,
-        question: q.question.trim(),
-        options: q.options.map(o => o.trim()),
-        answer: q.answer,
-        explanation: (q.explanation && typeof q.explanation === 'string') ? q.explanation.trim() : "Correct answer verified."
-      }));
-
       const newQuiz = {
         id: generatedId,
-        categoryId: parsed.categoryId,
+        categoryId: matchedCat.id,
         category: matchedCat.name,
         title: parsed.title.trim(),
-        description: parsed.description.trim(),
-        difficulty: parsed.difficulty,
-        duration: parseInt(parsed.duration, 10),
+        description: normalizedDescription,
+        difficulty: normalizedDifficulty,
+        duration: normalizedDuration,
         totalQuestions: formattedQuestions.length,
         questions: formattedQuestions
       };
@@ -237,7 +309,7 @@ export const CreateQuiz = () => {
       list.push(newQuiz);
       localStorage.setItem('quizguard_custom_quizzes_v1', JSON.stringify(list));
 
-      alert(`Success! Imported "${newQuiz.title}" with ${newQuiz.totalQuestions} questions.`);
+      alert(`Success! Imported "${newQuiz.title}" under category "${matchedCat.name}" with ${newQuiz.totalQuestions} questions.`);
       navigate('/categories');
 
     } catch (err) {
@@ -749,9 +821,9 @@ export const CreateQuiz = () => {
                 <div className="border-t border-slate-800/80 pt-4 space-y-2">
                   <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">Key Attributes</h4>
                   <ul className="text-[10px] text-slate-400 space-y-2 pl-4 list-disc leading-relaxed">
-                    <li><strong className="text-slate-200">categoryId:</strong> Must match one of: <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">js</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">react</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">web</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">gk</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">aptitude</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cloud</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cs</code>.</li>
-                    <li><strong className="text-slate-200">difficulty:</strong> Must be <code className="text-slate-300">"Easy"</code>, <code className="text-slate-300">"Medium"</code>, or <code className="text-slate-300">"Hard"</code>.</li>
-                    <li><strong className="text-slate-200">answer:</strong> 0-indexed index of the correct option (e.g. <code className="text-emerald-400">0</code> for the 1st option).</li>
+                    <li><strong className="text-slate-200">categoryId:</strong> Accepts category ID (<code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cs</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cloud</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">js</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">react</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">web</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">gk</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">aptitude</code>), category names (e.g., <code className="text-slate-300">"Cloud Computing"</code>, <code className="text-slate-300">"Computer Science"</code>), or tech keywords (<code className="text-slate-300">"AWS"</code>, <code className="text-slate-300">"Node"</code>). Auto-normalizes case and spacing.</li>
+                    <li><strong className="text-slate-200">difficulty:</strong> Accepts <code className="text-slate-300">"Easy"</code>, <code className="text-slate-300">"Medium"</code>, or <code className="text-slate-300">"Hard"</code> (case-insensitive, defaults to Medium).</li>
+                    <li><strong className="text-slate-200">answer:</strong> 0-indexed index of correct option (e.g. <code className="text-emerald-400">0</code> for 1st option) or matching option text string.</li>
                   </ul>
                 </div>
 

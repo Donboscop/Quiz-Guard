@@ -23,6 +23,7 @@ export const QuizProvider = ({ children }) => {
     type: 'warning' // 'warning' | 'boundary'
   });
 
+  const [questionTimes, setQuestionTimes] = useState({});
   const [latestResult, setLatestResult] = useState(null);
   const timerRef = useRef(null);
 
@@ -35,6 +36,23 @@ export const QuizProvider = ({ children }) => {
   const [opponentResult, setOpponentResult] = useState(null);
   const [playerName, setPlayerName] = useState('');
   const [opponentName, setOpponentName] = useState('');
+
+  // Per-question timing ticker
+  useEffect(() => {
+    if (sessionStatus !== 'in-progress' || !activeQuiz) return;
+    const currentQ = activeQuiz.questions[currentQuestionIndex];
+    if (!currentQ) return;
+    const qId = currentQ.id;
+
+    const interval = setInterval(() => {
+      setQuestionTimes(prev => ({
+        ...prev,
+        [qId]: (prev[qId] || 0) + 1
+      }));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sessionStatus, activeQuiz, currentQuestionIndex]);
 
   const resetMultiplayer = useCallback(() => {
     if (conn) {
@@ -79,6 +97,7 @@ export const QuizProvider = ({ children }) => {
         setActiveQuiz(data.quiz);
         setCurrentQuestionIndex(0);
         setUserAnswers({});
+        setQuestionTimes({});
         setMarkedForReview([]);
         setTimeRemaining(data.quiz.duration * 60);
         setFocusWarnings(0);
@@ -156,6 +175,7 @@ export const QuizProvider = ({ children }) => {
       setActiveQuiz(saved.activeQuiz);
       setCurrentQuestionIndex(saved.currentQuestionIndex || 0);
       setUserAnswers(saved.userAnswers || {});
+      setQuestionTimes(saved.questionTimes || {});
       setMarkedForReview(saved.markedForReview || []);
       setTimeRemaining(saved.timeRemaining || 0);
       setFocusWarnings(saved.focusWarnings || 0);
@@ -170,13 +190,14 @@ export const QuizProvider = ({ children }) => {
         activeQuiz,
         currentQuestionIndex,
         userAnswers,
+        questionTimes,
         markedForReview,
         timeRemaining,
         focusWarnings,
         sessionStatus
       });
     }
-  }, [activeQuiz, currentQuestionIndex, userAnswers, markedForReview, timeRemaining, focusWarnings, sessionStatus]);
+  }, [activeQuiz, currentQuestionIndex, userAnswers, questionTimes, markedForReview, timeRemaining, focusWarnings, sessionStatus]);
 
   // Start new quiz session
   const startQuiz = useCallback((quiz) => {
@@ -184,6 +205,7 @@ export const QuizProvider = ({ children }) => {
     setActiveQuiz(quiz);
     setCurrentQuestionIndex(0);
     setUserAnswers({});
+    setQuestionTimes({});
     setMarkedForReview([]);
     setTimeRemaining(quiz.duration * 60);
     setFocusWarnings(0);
@@ -193,12 +215,31 @@ export const QuizProvider = ({ children }) => {
     setWarningModal({ isOpen: false, title: '', message: '', type: 'warning' });
   }, []);
 
-  // Select an option for a question
-  const selectOption = useCallback((questionId, optionIndex) => {
-    setUserAnswers(prev => ({
-      ...prev,
-      [questionId]: optionIndex
-    }));
+  // Select an option for a question (supports single and multi-select)
+  const selectOption = useCallback((questionId, optionIndex, isMultiple = false) => {
+    setUserAnswers(prev => {
+      const current = prev[questionId];
+      if (isMultiple) {
+        let currentArr = Array.isArray(current)
+          ? [...current]
+          : (current !== undefined && current !== null && current !== '' ? [current] : []);
+        
+        if (currentArr.includes(optionIndex)) {
+          currentArr = currentArr.filter(i => i !== optionIndex);
+        } else {
+          currentArr.push(optionIndex);
+        }
+        currentArr.sort((a, b) => a - b);
+        return {
+          ...prev,
+          [questionId]: currentArr
+        };
+      }
+      return {
+        ...prev,
+        [questionId]: optionIndex
+      };
+    });
   }, []);
 
   // Toggle mark for review
@@ -256,6 +297,11 @@ export const QuizProvider = ({ children }) => {
       focusWarnings: focusWarnings,
       timeTakenSeconds: calculated.timeTakenSeconds,
       answers: userAnswers,
+      questionTimes: questionTimes,
+      isContest: isContestMode,
+      playerName: playerName.trim() || 'Player',
+      opponentName: opponentName || null,
+      opponentResult: opponentResult || null,
       questions: activeQuiz.questions // attach for review
     };
 
@@ -275,7 +321,7 @@ export const QuizProvider = ({ children }) => {
     }
 
     return savedRecord;
-  }, [activeQuiz, userAnswers, timeRemaining, focusWarnings, isContestMode, conn]);
+  }, [activeQuiz, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn]);
 
   // Terminate test due to focus violation
   const terminateQuiz = useCallback((reason) => {
@@ -308,6 +354,11 @@ export const QuizProvider = ({ children }) => {
       focusWarnings: focusWarnings + 1,
       timeTakenSeconds: calculated.timeTakenSeconds,
       answers: userAnswers,
+      questionTimes: questionTimes,
+      isContest: isContestMode,
+      playerName: playerName.trim() || 'Player',
+      opponentName: opponentName || null,
+      opponentResult: opponentResult || null,
       questions: activeQuiz.questions
     };
 
@@ -334,7 +385,7 @@ export const QuizProvider = ({ children }) => {
     }
 
     return savedRecord;
-  }, [activeQuiz, sessionStatus, userAnswers, timeRemaining, focusWarnings, isContestMode, conn]);
+  }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn]);
 
   // Issue focus warning (tab switch, etc.)
   const issueFocusWarning = useCallback((title, message) => {
@@ -364,6 +415,7 @@ export const QuizProvider = ({ children }) => {
       activeQuiz,
       currentQuestionIndex,
       userAnswers,
+      questionTimes,
       markedForReview,
       timeRemaining,
       setTimeRemaining,

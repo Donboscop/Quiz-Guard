@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuiz } from '../context/QuizContext';
 import { getQuizById } from '../data/quizzes';
-import { CheckCircle2, XCircle, MinusCircle, ArrowLeft, Lightbulb, BookOpen } from 'lucide-react';
+import { CheckCircle2, XCircle, MinusCircle, ArrowLeft, Lightbulb, BookOpen, Clock, CheckSquare } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
+import { formatTime, getOptionLetter, isMultiAnswerQuestion, getCorrectAnswers, getUserAnswers, isQuestionAnswered, isQuestionCorrect } from '../utils/quizUtils';
 import { motion } from 'framer-motion';
 
 export const Review = () => {
@@ -15,11 +16,12 @@ export const Review = () => {
   const quiz = getQuizById(id);
   const questions = latestResult?.questions || quiz?.questions || [];
   const userAnswers = latestResult?.answers || {};
+  const questionTimes = latestResult?.questionTimes || {};
 
   const getStatus = (q) => {
     const userSelected = userAnswers[q.id];
-    if (userSelected === undefined || userSelected === null) return 'unanswered';
-    if (userSelected === q.answer) return 'correct';
+    if (!isQuestionAnswered(q, userSelected)) return 'unanswered';
+    if (isQuestionCorrect(q, userSelected)) return 'correct';
     return 'incorrect';
   };
 
@@ -57,7 +59,7 @@ export const Review = () => {
           Detailed Answer Breakdown
         </h1>
         <p className="text-slate-400 text-sm">
-          Review your selected answers alongside correct solutions and expert explanations.
+          Review your selected answers alongside correct solutions, time logs, and expert explanations.
         </p>
       </div>
 
@@ -88,7 +90,10 @@ export const Review = () => {
         {filteredQuestions.map((q, idx) => {
           const userSelected = userAnswers[q.id];
           const status = getStatus(q);
-          const letters = ['A', 'B', 'C', 'D'];
+          const isMultiple = isMultiAnswerQuestion(q);
+          const userSelectedArr = getUserAnswers(userSelected);
+          const correctArr = getCorrectAnswers(q);
+          const secondsSpent = questionTimes[q.id] || 0;
 
           return (
             <motion.div
@@ -98,11 +103,23 @@ export const Review = () => {
               className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-6 shadow-lg"
             >
               
-              {/* Question Status Banner */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <span className="text-xs font-semibold text-slate-400">
-                  Question #{idx + 1}
-                </span>
+              {/* Question Status & Time Banner */}
+              <div className="flex items-center justify-between pb-4 border-b border-slate-800 flex-wrap gap-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-400">
+                    Question #{idx + 1}
+                  </span>
+                  {isMultiple && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 text-[11px] font-bold">
+                      <CheckSquare className="w-3 h-3 text-purple-400" />
+                      Multiple Select Question
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-950 text-slate-400 border border-slate-800 text-[11px] font-mono">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    <span>{formatTime(secondsSpent)} spent</span>
+                  </span>
+                </div>
 
                 {status === 'correct' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
@@ -134,15 +151,18 @@ export const Review = () => {
               {/* Options Grid */}
               <div className="space-y-2.5">
                 {q.options.map((opt, oIdx) => {
-                  const isUserChoice = userSelected === oIdx;
-                  const isCorrectChoice = q.answer === oIdx;
+                  const isUserChoice = userSelectedArr.includes(oIdx);
+                  const isCorrectChoice = correctArr.includes(oIdx);
 
                   let optionStyle = "bg-slate-950/60 border-slate-800 text-slate-400";
                   let badgeText = null;
 
-                  if (isCorrectChoice) {
+                  if (isCorrectChoice && isUserChoice) {
                     optionStyle = "bg-emerald-950/40 border-emerald-500/60 text-emerald-200 font-medium";
-                    badgeText = "✓ Correct Answer";
+                    badgeText = "✓ Correct Choice";
+                  } else if (isCorrectChoice && !isUserChoice) {
+                    optionStyle = "bg-emerald-950/20 border-emerald-500/40 text-emerald-300 font-medium";
+                    badgeText = "✓ Correct Answer (Missed)";
                   } else if (isUserChoice && !isCorrectChoice) {
                     optionStyle = "bg-rose-950/40 border-rose-500/60 text-rose-200 font-medium";
                     badgeText = "✕ Your Selection";
@@ -155,7 +175,7 @@ export const Review = () => {
                     >
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                          {letters[oIdx]}
+                          {getOptionLetter(oIdx)}
                         </span>
                         <span>{opt}</span>
                       </div>

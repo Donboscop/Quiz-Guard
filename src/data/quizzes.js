@@ -468,7 +468,7 @@ const STATIC_QUIZZES = [
     description: "Explore cloud fundamentals, IaaS vs PaaS vs SaaS, IAM roles, Docker containerization, and AWS Lambda.",
     difficulty: "Medium",
     duration: 10,
-    totalQuestions: 8,
+    totalQuestions: 10,
     questions: [
       {
         id: 601,
@@ -550,6 +550,32 @@ const STATIC_QUIZZES = [
         ],
         answer: 1,
         explanation: "A reverse proxy handles load balancing, SSL termination, caching, and forwards client requests to backend application servers."
+      },
+      {
+        id: 609,
+        question: "Which AWS Support plans provide 24/7 phone, email, and chat access to Cloud Support Engineers? (Select TWO.)",
+        options: [
+          "Basic",
+          "Developer",
+          "Business",
+          "Premium",
+          "Enterprise"
+        ],
+        answer: [2, 4],
+        explanation: "AWS Business Support and Enterprise Support plans provide 24/7 access to Cloud Support Engineers via phone, email, and chat. Developer support only provides email access during business hours."
+      },
+      {
+        id: 610,
+        question: "Which of the following are pillars of the AWS Well-Architected Framework? (Select TWO.)",
+        options: [
+          "Operational Excellence",
+          "Continuous Deployment",
+          "Performance Efficiency",
+          "Agile Management",
+          "Microservices Design"
+        ],
+        answer: [0, 2],
+        explanation: "The six pillars of the AWS Well-Architected Framework are Operational Excellence, Security, Reliability, Performance Efficiency, Cost Optimization, and Sustainability."
       }
     ]
   },

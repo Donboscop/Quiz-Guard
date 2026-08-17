@@ -47,23 +47,23 @@ export const Footer = () => {
 
           {/* Col 4: Disclaimer & Security Note */}
           <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-2 text-xs">
-            <div className="flex items-center gap-2 text-amber-400 font-semibold">
+            <div className="flex items-center gap-2 text-emerald-400 font-semibold">
               <ShieldCheck className="w-4 h-4" />
-              <span>Proctoring Notice</span>
+              <span>Proctoring Engine</span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              QuizGuard's focus monitoring is a browser-based demonstration feature. All logic executes client-side for evaluation purposes.
+              QuizGuard's active focus monitoring ensures real-time anti-cheat proctoring and assessment security.
             </p>
           </div>
         </div>
 
         {/* Bottom bar */}
         <div className="pt-8 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-          <p>© {new Date().getFullYear()} QuizGuard Platform. Built with React & Tailwind CSS.</p>
+          <p>© {new Date().getFullYear()} QuizGuard Platform. All rights reserved.</p>
           <div className="flex items-center gap-6 text-slate-500">
             <span className="flex items-center gap-1 hover:text-slate-300 transition-colors">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              100% Frontend Sandbox
+              Secure Assessment Platform
             </span>
           </div>
         </div>

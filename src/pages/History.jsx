@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getAttempts, clearAllAttempts } from '../utils/storage';
+import { getAttempts, clearAllAttempts, deleteAttemptById } from '../utils/storage';
 import { formatDate, formatTime } from '../utils/quizUtils';
 import { History as HistoryIcon, Trash2, Eye, ShieldAlert, CheckCircle2, Clock, BookOpen, AlertTriangle } from 'lucide-react';
 import { Button } from '../components/common/Button';
@@ -23,6 +23,13 @@ export const History = () => {
     clearAllAttempts();
     setAttempts([]);
     setClearModalOpen(false);
+  };
+
+  const handleDeleteSingleAttempt = (attId) => {
+    if (window.confirm("Are you sure you want to delete this attempt record?")) {
+      deleteAttemptById(attId);
+      setAttempts(prev => prev.filter(a => a.id !== attId));
+    }
   };
 
   return (
@@ -167,6 +174,15 @@ export const History = () => {
                       Review
                     </Button>
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSingleAttempt(att.id)}
+                    className="p-2 rounded-xl bg-slate-950 text-slate-500 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-all"
+                    title="Delete Attempt Record"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
 
               </motion.div>

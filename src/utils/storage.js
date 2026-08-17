@@ -44,6 +44,11 @@ export const saveAttempt = (attempt) => {
       focusWarnings: attempt.focusWarnings || 0,
       timeTakenSeconds: attempt.timeTakenSeconds || 0,
       answers: attempt.answers || {},
+      questionTimes: attempt.questionTimes || {},
+      isContest: Boolean(attempt.isContest),
+      playerName: attempt.playerName || 'Player',
+      opponentName: attempt.opponentName || null,
+      opponentResult: attempt.opponentResult || null,
       completedAt: new Date().toISOString()
     };
 
@@ -68,6 +73,21 @@ export const getAttempts = () => {
     console.error('Error reading attempt history:', error);
     return [];
   }
+};
+
+/**
+ * Get contest leaderboard sorted by score, percentage, and time taken
+ */
+export const getContestLeaderboard = () => {
+  const attempts = getAttempts();
+  const contests = attempts.filter(a => a.isContest || a.opponentName);
+  
+  // Sort contests by score DESC, percentage DESC, timeTakenSeconds ASC
+  return contests.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.percentage !== a.percentage) return b.percentage - a.percentage;
+    return a.timeTakenSeconds - b.timeTakenSeconds;
+  });
 };
 
 /**
@@ -129,3 +149,20 @@ export const clearAllAttempts = () => {
     return false;
   }
 };
+
+/**
+ * Delete a single attempt by ID
+ */
+export const deleteAttemptById = (attemptId) => {
+  if (!isStorageAvailable()) return false;
+  try {
+    const attempts = getAttempts();
+    const filtered = attempts.filter(a => a.id !== attemptId);
+    window.localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(filtered));
+    return true;
+  } catch (error) {
+    console.error('Error deleting attempt:', error);
+    return false;
+  }
+};
+

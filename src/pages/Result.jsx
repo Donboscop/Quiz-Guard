@@ -4,7 +4,7 @@ import { useQuiz } from '../context/QuizContext';
 import { StatCard } from '../components/quiz/StatCard';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { formatTime } from '../utils/quizUtils';
+import { formatTime, isQuestionCorrect, isQuestionAnswered } from '../utils/quizUtils';
 import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
@@ -245,6 +245,72 @@ export const Result = () => {
           bgGradient="from-cyan-500/10 to-blue-500/5"
         />
       </div>
+
+      {/* QUESTION TIMELINE & TIME SPENT BREAKDOWN */}
+      {Array.isArray(result.questions) && result.questions.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-amber-400" />
+              <h3 className="font-display font-bold text-lg text-white">Per-Question Time Breakdown</h3>
+            </div>
+            <Badge variant="brand" size="sm">
+              Gap Limit: {formatTime(Math.max(10, Math.round(((latestResult?.duration || 10) * 60) / result.questions.length)))} / Quest
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {result.questions.map((q, idx) => {
+              const userChoice = result.answers?.[q.id];
+              const isCorrect = isQuestionCorrect(q, userChoice);
+              const isUnanswered = !isQuestionAnswered(q, userChoice);
+              const timeSpentSec = result.questionTimes?.[q.id] || 0;
+              const allocatedGap = Math.max(10, Math.round(((latestResult?.duration || 10) * 60) / result.questions.length));
+              const fillPct = Math.min(100, Math.round((timeSpentSec / allocatedGap) * 100));
+
+              return (
+                <div key={q.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-xs text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded border border-brand-500/20">
+                      Q{idx + 1}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
+                      isCorrect ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      isUnanswered ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                      'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                    }`}>
+                      {isCorrect ? '✓ Correct' : isUnanswered ? '— Skipped' : '✕ Wrong'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 line-clamp-1 font-medium">
+                    {q.question}
+                  </p>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <span>Time Spent: <strong className="text-white">{formatTime(timeSpentSec)}</strong></span>
+                      <span>Target Gap: {formatTime(allocatedGap)}</span>
+                    </div>
+                    <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                      <div
+                        className={`h-full transition-all ${
+                          fillPct > 90 ? 'bg-rose-500' : fillPct > 70 ? 'bg-amber-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${fillPct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">

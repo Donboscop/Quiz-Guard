@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getQuizzesList } from '../data/quizzes';
 import { useQuiz } from '../context/QuizContext';
+import { getContestLeaderboard } from '../utils/storage';
+import { formatTime, formatDate } from '../utils/quizUtils';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Peer } from 'peerjs';
-import { ShieldCheck, Users, Copy, Check, Play, LogIn, ArrowRight, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Users, Copy, Check, Play, LogIn, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const ContestLobby = () => {
@@ -431,6 +433,79 @@ export const ContestLobby = () => {
           </div>
         )}
 
+      </div>
+
+      {/* LIVE ARENA HISTORICAL LEADERBOARD */}
+      <div className="max-w-3xl mx-auto p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Trophy className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-display font-bold text-base sm:text-lg text-white">Live Arena Global Leaderboard</h3>
+              <p className="text-xs text-slate-400">Top rankings and recent match scores across all live contests.</p>
+            </div>
+          </div>
+          <Badge variant="brand" size="sm">
+            {getContestLeaderboard().length} Contest Records
+          </Badge>
+        </div>
+
+        {getContestLeaderboard().length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-xs space-y-2">
+            <Trophy className="w-8 h-8 mx-auto text-slate-700 opacity-60" />
+            <p>No live contest duels completed yet. Host or join a match above to claim top spot on the leaderboard!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {getContestLeaderboard().map((record, idx) => (
+              <div
+                key={record.id}
+                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:border-slate-700 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-8 h-8 rounded-xl font-mono font-bold flex items-center justify-center text-xs ${
+                    idx === 0 ? 'bg-amber-400/20 text-amber-400 border border-amber-400/40 shadow-glow-sm' :
+                    idx === 1 ? 'bg-slate-300/20 text-slate-200 border border-slate-300/30' :
+                    idx === 2 ? 'bg-amber-600/20 text-amber-500 border border-amber-600/30' :
+                    'bg-slate-800 text-slate-400'
+                  }`}>
+                    #{idx + 1}
+                  </span>
+                  <div>
+                    <h4 className="font-display font-bold text-sm text-white flex items-center gap-2">
+                      {record.playerName || 'Anonymous Duelist'}
+                      {record.opponentName && (
+                        <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                          vs {record.opponentName}
+                        </span>
+                      )}
+                    </h4>
+                    <span className="text-[11px] text-slate-400 line-clamp-1">
+                      {record.quizTitle} • {formatDate(record.completedAt)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-slate-800/80 pt-2 sm:pt-0">
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Score</span>
+                    <span className="font-black text-sm text-brand-400">
+                      {record.score}/{record.totalQuestions} ({record.percentage}%)
+                    </span>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Time</span>
+                    <span className="font-bold text-xs text-slate-300">
+                      {formatTime(record.timeTakenSeconds)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>

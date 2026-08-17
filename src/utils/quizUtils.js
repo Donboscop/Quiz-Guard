@@ -12,9 +12,76 @@ export const formatTime = (totalSeconds) => {
 };
 
 /**
+ * Converts option index to letter (0 -> A, 1 -> B, 2 -> C, 3 -> D, 4 -> E, 5 -> F, etc.)
+ */
+export const getOptionLetter = (index) => {
+  if (typeof index !== 'number' || index < 0) return String(index || '');
+  return String.fromCharCode(65 + index);
+};
+
+/**
+ * Checks if a question requires selecting multiple options
+ */
+export const isMultiAnswerQuestion = (question) => {
+  if (!question) return false;
+  if (Array.isArray(question.answer) && question.answer.length > 1) return true;
+  if (question.multiple === true || question.type === 'multiple') return true;
+  if (typeof question.question === 'string' && /select\s+(two|three|four|multiple|all)/i.test(question.question)) {
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Returns sorted array of correct option indices for a question
+ */
+export const getCorrectAnswers = (question) => {
+  if (!question) return [];
+  if (Array.isArray(question.answer)) {
+    return [...question.answer].map(n => Number(n)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+  }
+  if (question.answer !== undefined && question.answer !== null && question.answer !== '') {
+    return [Number(question.answer)];
+  }
+  return [];
+};
+
+/**
+ * Returns sorted array of user selected option indices
+ */
+export const getUserAnswers = (userSelected) => {
+  if (Array.isArray(userSelected)) {
+    return [...userSelected].map(n => Number(n)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+  }
+  if (userSelected !== undefined && userSelected !== null && userSelected !== '') {
+    return [Number(userSelected)];
+  }
+  return [];
+};
+
+/**
+ * Checks if a question has been answered by user
+ */
+export const isQuestionAnswered = (question, userSelected) => {
+  const userArr = getUserAnswers(userSelected);
+  return userArr.length > 0;
+};
+
+/**
+ * Checks if user's selected options match correct answer exactly
+ */
+export const isQuestionCorrect = (question, userSelected) => {
+  if (!isQuestionAnswered(question, userSelected)) return false;
+  const correctArr = getCorrectAnswers(question);
+  const userArr = getUserAnswers(userSelected);
+  if (correctArr.length !== userArr.length) return false;
+  return correctArr.every((val, idx) => val === userArr[idx]);
+};
+
+/**
  * Calculates quiz score metrics
  * @param {Array} questions 
- * @param {Object} userAnswers - map of questionId -> optionIndex
+ * @param {Object} userAnswers - map of questionId -> optionIndex or array of optionIndices
  * @param {number} totalDurationMins 
  * @param {number} remainingSeconds 
  */
@@ -25,9 +92,9 @@ export const calculateResults = (questions = [], userAnswers = {}, totalDuration
 
   questions.forEach((q) => {
     const selectedOption = userAnswers[q.id];
-    if (selectedOption === undefined || selectedOption === null) {
+    if (!isQuestionAnswered(q, selectedOption)) {
       unansweredCount++;
-    } else if (selectedOption === q.answer) {
+    } else if (isQuestionCorrect(q, selectedOption)) {
       correctCount++;
     } else {
       wrongCount++;
@@ -69,6 +136,16 @@ export const calculateResults = (questions = [], userAnswers = {}, totalDuration
   };
 };
 
+export const getQuestionTimelineGap = (quiz) => {
+  if (!quiz) return 60; // Default 60 seconds
+  if (quiz.timePerQuestion && typeof quiz.timePerQuestion === 'number' && quiz.timePerQuestion > 0) {
+    return quiz.timePerQuestion;
+  }
+  const durationSec = (quiz.duration || 10) * 60;
+  const qCount = quiz.questions?.length || 1;
+  return Math.max(10, Math.round(durationSec / qCount));
+};
+
 /**
  * Format ISO date string into readable local format
  */
@@ -87,3 +164,5 @@ export const formatDate = (isoString) => {
     return isoString;
   }
 };
+
+

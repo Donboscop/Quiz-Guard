@@ -3,8 +3,9 @@ import { useNavigate, Link, useParams } from 'react-router-dom';
 import { CATEGORIES, getQuizById, saveCustomQuiz, deleteCustomQuiz } from '../data/quizzes';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3 } from 'lucide-react';
+import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getOptionLetter } from '../utils/quizUtils';
 
 export const CreateQuiz = () => {
   const navigate = useNavigate();
@@ -26,7 +27,8 @@ export const CreateQuiz = () => {
   const [categoryId, setCategoryId] = useState(CATEGORIES[0]?.id || 'js');
   const [difficulty, setDifficulty] = useState('Medium');
   const [duration, setDuration] = useState(10); // in minutes
-  
+  const [timePerQuestion, setTimePerQuestion] = useState(60); // in seconds per question timeline gap
+
   // Questions list state (manual mode)
   const [questions, setQuestions] = useState([
     {
@@ -50,6 +52,7 @@ export const CreateQuiz = () => {
         setCategoryId(existingQuiz.categoryId || CATEGORIES[0].id);
         setDifficulty(existingQuiz.difficulty || 'Medium');
         setDuration(existingQuiz.duration || 10);
+        setTimePerQuestion(existingQuiz.timePerQuestion || 60);
         if (Array.isArray(existingQuiz.questions) && existingQuiz.questions.length > 0) {
           setQuestions(existingQuiz.questions);
         }
@@ -60,6 +63,7 @@ export const CreateQuiz = () => {
           categoryId: existingQuiz.categoryId,
           difficulty: existingQuiz.difficulty,
           duration: existingQuiz.duration,
+          timePerQuestion: existingQuiz.timePerQuestion || 60,
           questions: existingQuiz.questions
         };
         setJsonText(JSON.stringify(templateObj, null, 2));
@@ -67,13 +71,13 @@ export const CreateQuiz = () => {
     }
   }, [id, isEditing]);
 
-
   const sampleJsonTemplate = `{
   "title": "Node.js Event Loop Masterclass",
   "description": "Test your knowledge of the event loop phases, microtasks, timers, and process.nextTick().",
   "categoryId": "cs",
   "difficulty": "Hard",
   "duration": 15,
+  "timePerQuestion": 60,
   "questions": [
     {
       "question": "Which phase of the Node.js event loop executes callbacks scheduled by setTimeout()?",
@@ -85,17 +89,6 @@ export const CreateQuiz = () => {
       ],
       "answer": 0,
       "explanation": "The Timers phase executes callbacks scheduled by setTimeout() and setInterval()."
-    },
-    {
-      "question": "Which function executes first when invoked alongside setImmediate() in an I/O callback?",
-      "options": [
-        "setImmediate()",
-        "setTimeout()",
-        "They execute randomly",
-        "process.nextTick()"
-      ],
-      "answer": 0,
-      "explanation": "Within an I/O cycle (e.g. fs.readFile), setImmediate is always executed before any timers, regardless of time constraints."
     }
   ]
 }`;
@@ -183,7 +176,35 @@ export const CreateQuiz = () => {
   // Choose the correct answer option index
   const handleSelectCorrectAnswer = (qIndex, optIndex) => {
     const updated = [...questions];
-    updated[qIndex].answer = optIndex;
+    const currentAns = updated[qIndex].answer;
+    if (Array.isArray(currentAns)) {
+      let arr = [...currentAns];
+      if (arr.includes(optIndex)) {
+        if (arr.length > 1) {
+          arr = arr.filter(i => i !== optIndex);
+        }
+      } else {
+        arr.push(optIndex);
+      }
+      arr.sort((a, b) => a - b);
+      updated[qIndex].answer = arr;
+    } else {
+      updated[qIndex].answer = optIndex;
+    }
+    setQuestions(updated);
+  };
+
+  // Toggle single vs multi-select mode for a question
+  const handleToggleMultipleChoice = (qIndex) => {
+    const updated = [...questions];
+    const currentAns = updated[qIndex].answer;
+    if (Array.isArray(currentAns)) {
+      // Switch to single answer mode
+      updated[qIndex].answer = currentAns[0] !== undefined ? currentAns[0] : 0;
+    } else {
+      // Switch to multi answer mode
+      updated[qIndex].answer = [currentAns !== undefined ? currentAns : 0];
+    }
     setQuestions(updated);
   };
 
@@ -296,7 +317,13 @@ export const CreateQuiz = () => {
         }
 
         let answerIndex = 0;
-        if (typeof q.answer === 'number' && q.answer >= 0 && q.answer < opts.length) {
+        if (Array.isArray(q.answer)) {
+          const parsedArr = q.answer
+            .map(n => Number(n))
+            .filter(n => !isNaN(n) && n >= 0 && n < opts.length);
+          answerIndex = Array.from(new Set(parsedArr)).sort((a, b) => a - b);
+          if (answerIndex.length === 0) answerIndex = 0;
+        } else if (typeof q.answer === 'number' && q.answer >= 0 && q.answer < opts.length) {
           answerIndex = Math.floor(q.answer);
         } else if (typeof q.answer === 'string') {
           const parsedIdx = parseInt(q.answer.trim(), 10);
@@ -321,6 +348,13 @@ export const CreateQuiz = () => {
         };
       });
 
+      let normalizedTimePerQuestion = 60;
+      if (typeof parsed.timePerQuestion === 'number' && parsed.timePerQuestion > 0) {
+        normalizedTimePerQuestion = Math.round(parsed.timePerQuestion);
+      } else {
+        normalizedTimePerQuestion = Math.max(10, Math.round((normalizedDuration * 60) / formattedQuestions.length));
+      }
+
       // 3. Construct and Save Quiz
       const targetId = isEditing ? id : `custom-${Date.now()}`;
       const newQuiz = {
@@ -331,6 +365,7 @@ export const CreateQuiz = () => {
         description: normalizedDescription,
         difficulty: normalizedDifficulty,
         duration: normalizedDuration,
+        timePerQuestion: normalizedTimePerQuestion,
         totalQuestions: formattedQuestions.length,
         questions: formattedQuestions
       };
@@ -412,6 +447,9 @@ export const CreateQuiz = () => {
       explanation: q.explanation.trim() || "Correct answer verified."
     }));
 
+    const parsedDur = parseInt(duration, 10);
+    const parsedTimePerQ = parseInt(timePerQuestion, 10) || Math.max(10, Math.round((parsedDur * 60) / formattedQuestions.length));
+
     const newQuiz = {
       id: targetId,
       categoryId,
@@ -419,7 +457,8 @@ export const CreateQuiz = () => {
       title: title.trim(),
       description: description.trim(),
       difficulty,
-      duration: parseInt(duration, 10),
+      duration: parsedDur,
+      timePerQuestion: parsedTimePerQ,
       totalQuestions: formattedQuestions.length,
       questions: formattedQuestions
     };
@@ -567,8 +606,8 @@ export const CreateQuiz = () => {
                 </select>
               </div>
 
-              {/* Difficulty & Duration Grid */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Difficulty, Duration & Per-Question Time Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Difficulty</label>
                   <select
@@ -583,7 +622,7 @@ export const CreateQuiz = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Time Limit (mins)</label>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Total Limit (mins)</label>
                   <input
                     type="number"
                     min="1"
@@ -596,6 +635,19 @@ export const CreateQuiz = () => {
                     className={`w-full px-4 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white focus:outline-none focus:ring-1 transition-all ${
                       errors.duration ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-brand-500 focus:ring-brand-500'
                     }`}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Time Gap / Quest (sec)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="300"
+                    value={timePerQuestion}
+                    onChange={(e) => setTimePerQuestion(e.target.value)}
+                    placeholder="e.g. 60"
+                    className="w-full px-4 py-3 rounded-2xl bg-slate-950/80 border border-slate-700 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
                   />
                 </div>
               </div>
@@ -628,7 +680,7 @@ export const CreateQuiz = () => {
                       className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 relative group shadow-lg"
                     >
                       {/* Header bar of question card */}
-                      <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                         <div className="flex items-center gap-3">
                           <span className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-mono font-bold flex items-center justify-center text-sm shadow-glow-sm">
                             {qIdx + 1}
@@ -638,14 +690,30 @@ export const CreateQuiz = () => {
                           </h4>
                         </div>
                         
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveQuestion(qIdx)}
-                          className="p-2 rounded-xl bg-slate-950 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/20 transition-all opacity-80 group-hover:opacity-100"
-                          title="Delete Question"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMultipleChoice(qIdx)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                              Array.isArray(q.answer)
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-glow-sm'
+                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                            }`}
+                            title="Toggle between single answer and multi-select mode"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5 text-purple-400" />
+                            <span>{Array.isArray(q.answer) ? 'Multi-Select (Select Multiple)' : 'Single Choice'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuestion(qIdx)}
+                            className="p-2 rounded-xl bg-slate-950 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/20 transition-all opacity-80 group-hover:opacity-100"
+                            title="Delete Question"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Question text input */}
@@ -668,15 +736,18 @@ export const CreateQuiz = () => {
 
                       {/* Options list container */}
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Options & Correct Answer</label>
-                          <span className="text-[10px] text-slate-400 italic">Select checkmark button to set as correct answer</span>
+                          <span className="text-[10px] text-slate-400 italic">
+                            {Array.isArray(q.answer) ? 'Click checkmarks to toggle multiple correct answers' : 'Click checkmark to set as correct answer'}
+                          </span>
                         </div>
                         
                         <div className="grid grid-cols-1 gap-3.5">
                           {q.options.map((opt, optIdx) => {
-                            const isCorrect = q.answer === optIdx;
+                            const isCorrect = Array.isArray(q.answer) ? q.answer.includes(optIdx) : q.answer === optIdx;
                             const optErr = qErrObj.options?.[optIdx];
+                            const letter = getOptionLetter(optIdx);
                             
                             return (
                               <div key={optIdx} className="flex items-center gap-3">
@@ -685,7 +756,9 @@ export const CreateQuiz = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleSelectCorrectAnswer(qIdx, optIdx)}
-                                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+                                  className={`w-10 h-10 border flex items-center justify-center transition-all ${
+                                    Array.isArray(q.answer) ? 'rounded-xl' : 'rounded-xl'
+                                  } ${
                                     isCorrect
                                       ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-glow-sm'
                                       : 'bg-slate-950 border-slate-800 text-slate-600 hover:text-slate-400'
@@ -699,7 +772,7 @@ export const CreateQuiz = () => {
                                 <div className="flex-1 relative">
                                   <input
                                     type="text"
-                                    placeholder={`Option ${optIdx + 1}...`}
+                                    placeholder={`Option ${letter}...`}
                                     value={opt}
                                     onChange={(e) => {
                                       handleOptionTextChange(qIdx, optIdx, e.target.value);

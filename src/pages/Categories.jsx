@@ -5,10 +5,14 @@ import { Search, Filter, BookOpen, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const Categories = () => {
-  const quizzes = getQuizzesList();
+  const [quizzes, setQuizzes] = useState(() => getQuizzesList());
   const [selectedCat, setSelectedCat] = useState('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleQuizDeleted = (deletedId) => {
+    setQuizzes(prev => prev.filter(q => q.id !== deletedId));
+  };
 
   const filteredQuizzes = quizzes.filter(quiz => {
     const matchesCat = selectedCat === 'all' || quiz.categoryId === selectedCat;
@@ -120,7 +124,7 @@ export const Categories = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <QuizCard quiz={quiz} />
+              <QuizCard quiz={quiz} onDelete={handleQuizDeleted} />
             </motion.div>
           ))}
         </div>

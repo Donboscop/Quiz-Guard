@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuiz } from '../../context/QuizContext';
 import { Bookmark, Check, HelpCircle } from 'lucide-react';
 import { Button } from '../common/Button';
+import { isQuestionAnswered } from '../../utils/quizUtils';
 
 export const QuestionNavigator = ({ questions = [] }) => {
   const {
@@ -14,6 +15,7 @@ export const QuestionNavigator = ({ questions = [] }) => {
   } = useQuiz();
 
   const currentQ = questions[currentQuestionIndex];
+  const answeredCount = questions.filter(q => isQuestionAnswered(q, userAnswers[q.id])).length;
 
   return (
     <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-5">
@@ -22,7 +24,7 @@ export const QuestionNavigator = ({ questions = [] }) => {
           Question Navigator
         </h3>
         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
-          {Object.keys(userAnswers).length} / {questions.length} Answered
+          {answeredCount} / {questions.length} Answered
         </span>
       </div>
 
@@ -43,7 +45,7 @@ export const QuestionNavigator = ({ questions = [] }) => {
       <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
         {questions.map((q, idx) => {
           const isCurrent = idx === currentQuestionIndex;
-          const isAnswered = userAnswers[q.id] !== undefined && userAnswers[q.id] !== null;
+          const isAnswered = isQuestionAnswered(q, userAnswers[q.id]);
           const isMarked = markedForReview.includes(q.id);
 
           let bgClass = "bg-slate-800/60 text-slate-400 border-slate-700/50 hover:bg-slate-800";

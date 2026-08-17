@@ -1,16 +1,17 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
+import { getOptionLetter } from '../../utils/quizUtils';
 
 export const QuizOption = ({
   optionText,
   index,
   isSelected,
   onSelect,
+  isMultiple = false,
   disabled = false
 }) => {
-  const letters = ['A', 'B', 'C', 'D'];
-  const letter = letters[index] || (index + 1);
+  const letter = getOptionLetter(index);
 
   return (
     <motion.button
@@ -38,7 +39,9 @@ export const QuizOption = ({
         </span>
       </div>
 
-      <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+      <div className={`w-5 h-5 border flex items-center justify-center transition-all ${
+        isMultiple ? 'rounded-md' : 'rounded-full'
+      } ${
         isSelected
           ? 'bg-brand-500 border-brand-400 text-white scale-110'
           : 'border-slate-700 bg-slate-950/50'

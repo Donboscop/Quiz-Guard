@@ -85,6 +85,19 @@ export const QuizProvider = ({ children }) => {
     });
   }, []);
 
+  // Helper to initialize Host participant entry
+  const initHostParticipants = useCallback((hostPeerId, name) => {
+    const hostEntry = {
+      id: hostPeerId || 'host',
+      name: name.trim() || 'Host',
+      isHost: true,
+      currentQuestionIndex: 0,
+      score: 0,
+      status: 'in-lobby'
+    };
+    setParticipants([hostEntry]);
+  }, []);
+
   // Handle incoming P2P connections on Host
   useEffect(() => {
     if (!peer) return;
@@ -109,10 +122,21 @@ export const QuizProvider = ({ children }) => {
           };
 
           setParticipants(prev => {
-            const exists = prev.some(p => p.id === connection.peer);
+            const hostEntry = {
+              id: peer ? peer.id : 'host',
+              name: playerName.trim() || 'Host',
+              isHost: true,
+              currentQuestionIndex: 0,
+              score: 0,
+              status: 'in-lobby'
+            };
+
+            const hasHost = prev.some(p => p.isHost);
+            let base = hasHost ? prev : [hostEntry, ...prev];
+            const exists = base.some(p => p.id === connection.peer);
             const updated = exists
-              ? prev.map(p => p.id === connection.peer ? { ...p, name: data.name } : p)
-              : [...prev, newGuest];
+              ? base.map(p => p.id === connection.peer ? { ...p, name: data.name } : p)
+              : [...base, newGuest];
 
             // Host broadcasts updated LOBBY_STATE to ALL guests
             const lobbyPayload = {
@@ -620,7 +644,8 @@ export const QuizProvider = ({ children }) => {
       setPlayerName,
       opponentName,
       setOpponentName,
-      resetMultiplayer
+      resetMultiplayer,
+      initHostParticipants
     }}>
       {children}
     </QuizContext.Provider>

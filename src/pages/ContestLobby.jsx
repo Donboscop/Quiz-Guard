@@ -23,6 +23,7 @@ export const ContestLobby = () => {
     setPeer,
     conn,
     setConn,
+    participants,
     isContestMode,
     setIsContestMode,
     setIsHost,
@@ -31,7 +32,9 @@ export const ContestLobby = () => {
     playerName,
     setPlayerName,
     startQuiz,
-    resetMultiplayer
+    startContest,
+    resetMultiplayer,
+    initHostParticipants
   } = useQuiz();
 
   const [lobbyMode, setLobbyMode] = useState('select'); // 'select' | 'host' | 'join'
@@ -54,8 +57,6 @@ export const ContestLobby = () => {
   useEffect(() => {
     resetMultiplayer();
   }, []);
-
-
 
   // Navigate both players when test starts
   const { activeQuiz, sessionStatus } = useQuiz();
@@ -91,6 +92,7 @@ export const ContestLobby = () => {
       setLoading(false);
       setIsContestMode(true);
       setIsHost(true);
+      initHostParticipants(id, playerName);
     });
 
     newPeer.on('error', (err) => {
@@ -307,43 +309,72 @@ export const ContestLobby = () => {
               </p>
             </div>
 
-            {/* Connection status & Participants List card */}
-            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4 text-left">
+            {/* Live Joined Participants Roster Card */}
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4 text-left shadow-xl">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Joined Room Participants ({participants.length > 0 ? participants.length : 1})
-                </span>
-                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  Live Room Active
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-400" />
+                  <span className="text-xs font-extrabold text-white uppercase tracking-wider">
+                    Live Room Roster ({participants.length > 0 ? participants.length : 1} Joined)
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  Waiting for Players
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Host */}
-                <div className="p-3 rounded-xl bg-slate-900 border border-brand-500/40 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="text-xs font-bold text-white">{playerName.trim() || "Host"}</span>
-                  </div>
-                  <span className="text-[9px] font-black bg-brand-500/20 text-brand-300 border border-brand-500/30 px-2 py-0.5 rounded">HOST (YOU)</span>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {participants.map(p => {
+                  const isHostUser = p.isHost;
+                  return (
+                    <div
+                      key={p.id || p.name}
+                      className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${
+                        isHostUser
+                          ? 'bg-brand-500/10 border-brand-500/40 shadow-glow-sm'
+                          : 'bg-slate-900 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center text-xs uppercase ${
+                          isHostUser
+                            ? 'bg-brand-500 text-white'
+                            : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                        }`}>
+                          {p.name ? p.name.charAt(0) : 'P'}
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block truncate max-w-[120px]">
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            Connected
+                          </span>
+                        </div>
+                      </div>
 
-                {/* Connected Guests */}
-                {participants.filter(p => !p.isHost).map(p => (
-                  <div key={p.id || p.name} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                      <span className="text-xs font-bold text-white">{p.name}</span>
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                        isHostUser
+                          ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}>
+                        {isHostUser ? 'HOST (YOU)' : 'JOINED & READY'}
+                      </span>
                     </div>
-                    <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">READY</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {participants.filter(p => !p.isHost).length === 0 && (
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 text-center text-xs text-slate-400 font-medium animate-pulse">
-                  Waiting for friends to join using the Lobby Code above...
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center space-y-1">
+                  <p className="text-xs font-semibold text-slate-300">
+                    No friends connected yet
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Share the 36-character Lobby Code above with your friends. As soon as they enter it, their names will appear here live!
+                  </p>
                 </div>
               )}
             </div>

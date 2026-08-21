@@ -56,13 +56,16 @@ export const QuizProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [sessionStatus, activeQuiz, currentQuestionIndex]);
 
+  const connsMapRef = useRef(new Map()); // Host's Map of peerId -> DataConnection
+
   const resetMultiplayer = useCallback(() => {
     if (conn) {
       try { conn.close(); } catch(e){}
     }
-    connsRef.current.forEach(c => {
+    connsMapRef.current.forEach(c => {
       try { c.close(); } catch(e){}
     });
+    connsMapRef.current.clear();
     connsRef.current = [];
 
     if (peer) {
@@ -80,8 +83,14 @@ export const QuizProvider = ({ children }) => {
 
   // Host helper to broadcast data to all connected guests
   const broadcastToAll = useCallback((payload) => {
-    connsRef.current.forEach(c => {
-      try { c.send(payload); } catch(e){}
+    connsMapRef.current.forEach((c, peerId) => {
+      try {
+        if (c && c.open) {
+          c.send(payload);
+        }
+      } catch(e) {
+        console.error(`[Broadcast Error] ${peerId}:`, e);
+      }
     });
   }, []);
 
@@ -104,7 +113,7 @@ export const QuizProvider = ({ children }) => {
 
     const handleConnection = (connection) => {
       // Check maximum limit of 50 participants
-      if (connsRef.current.length >= 50) {
+      if (connsMapRef.current.size >= 50) {
         connection.on('open', () => {
           try {
             connection.send({
@@ -117,111 +126,137 @@ export const QuizProvider = ({ children }) => {
         return;
       }
 
-      // Add connection to Host's list if not present
-      if (!connsRef.current.some(c => c.peer === connection.peer)) {
-        connsRef.current.push(connection);
-      }
-      setConnState(connection);
+      // Store/overwrite active connection for this guest peer
+      connsMapRef.current.set(connection.peer, connection);
+      connsRef.current = Array.from(connsMapRef.current.values());
 
-      // Listen for data from this guest
-      connection.on('data', (data) => {
-        if (data.type === 'HANDSHAKE') {
-          const newGuest = {
-            id: connection.peer,
-            name: data.name || 'Guest',
-            isHost: false,
-            currentQuestionIndex: 0,
-            score: 0,
-            status: 'in-lobby'
-          };
+      const registerDataHandler = (c) => {
+        c.on('data', (data) => {
+          if (data.type === 'HANDSHAKE') {
+            // Guarantee fresh connection mapping
+            connsMapRef.current.set(c.peer, c);
+            connsRef.current = Array.from(connsMapRef.current.values());
 
-          setParticipants(prev => {
-            // Reject if 50 limit reached
-            if (prev.length >= 50) {
-              try {
-                connection.send({
-                  type: 'ROOM_ERROR',
-                  message: 'Room is full! Maximum limit of 50 participants reached.'
-                });
-              } catch(e){}
-              return prev;
-            }
-
-            const hostEntry = {
-              id: peer ? peer.id : 'host',
-              name: playerName.trim() || 'Host',
-              isHost: true,
+            const newGuest = {
+              id: c.peer,
+              name: data.name || 'Guest',
+              isHost: false,
               currentQuestionIndex: 0,
               score: 0,
               status: 'in-lobby'
             };
 
-            const hasHost = prev.some(p => p.isHost);
-            let base = hasHost ? prev : [hostEntry, ...prev];
-            const exists = base.some(p => p.id === connection.peer);
-            const updated = exists
-              ? base.map(p => p.id === connection.peer ? { ...p, name: data.name } : p)
-              : [...base, newGuest];
+            setParticipants(prev => {
+              if (prev.length >= 50) {
+                try {
+                  c.send({
+                    type: 'ROOM_ERROR',
+                    message: 'Room is full! Maximum limit of 50 participants reached.'
+                  });
+                } catch(e){}
+                return prev;
+              }
 
-            // Host broadcasts updated LOBBY_STATE to ALL guests
-            const lobbyPayload = {
-              type: 'LOBBY_STATE',
-              participants: updated,
-              hostName: playerName.trim() || 'Host'
-            };
-            connsRef.current.forEach(c => {
-              try { c.send(lobbyPayload); } catch(e){}
+              const hostEntry = {
+                id: peer ? peer.id : 'host',
+                name: playerName.trim() || 'Host',
+                isHost: true,
+                currentQuestionIndex: 0,
+                score: 0,
+                status: 'in-lobby'
+              };
+
+              const hasHost = prev.some(p => p.isHost);
+              let base = hasHost ? prev : [hostEntry, ...prev];
+              const exists = base.some(p => p.id === c.peer);
+              const updated = exists
+                ? base.map(p => p.id === c.peer ? { ...p, name: data.name } : p)
+                : [...base, newGuest];
+
+              // Broadcast updated LOBBY_STATE to ALL guests in map
+              const lobbyPayload = {
+                type: 'LOBBY_STATE',
+                participants: updated,
+                hostName: playerName.trim() || 'Host'
+              };
+              
+              connsMapRef.current.forEach((connItem) => {
+                try {
+                  if (connItem && connItem.open) {
+                    connItem.send(lobbyPayload);
+                  }
+                } catch(e){}
+              });
+
+              return updated;
             });
 
-            return updated;
-          });
+            setOpponentName(data.name || 'Guest');
+          } else if (data.type === 'PROGRESS_UPDATE') {
+            setParticipants(prev => {
+              const updated = prev.map(p => p.id === c.peer ? {
+                ...p,
+                currentQuestionIndex: data.currentQuestionIndex,
+                score: data.score,
+                status: data.status
+              } : p);
 
-          setOpponentName(data.name || 'Guest');
-        } else if (data.type === 'PROGRESS_UPDATE') {
-          setParticipants(prev => {
-            const updated = prev.map(p => p.id === connection.peer ? {
-              ...p,
-              currentQuestionIndex: data.currentQuestionIndex,
-              score: data.score,
-              status: data.status
-            } : p);
+              // Relay progress to all guests
+              connsMapRef.current.forEach((connItem) => {
+                try {
+                  if (connItem && connItem.open) {
+                    connItem.send({ type: 'ROOM_PROGRESS', participants: updated });
+                  }
+                } catch(e){}
+              });
 
-            // Relay progress to all guests
-            connsRef.current.forEach(c => {
-              try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+              return updated;
             });
+          } else if (data.type === 'FINISH_CONTEST' || data.type === 'TERMINATE_CONTEST') {
+            setParticipants(prev => {
+              const updated = prev.map(p => p.id === c.peer ? {
+                ...p,
+                score: data.result?.score ?? p.score,
+                status: data.type === 'TERMINATE_CONTEST' ? 'terminated' : 'completed',
+                result: data.result
+              } : p);
 
-            return updated;
-          });
-        } else if (data.type === 'FINISH_CONTEST' || data.type === 'TERMINATE_CONTEST') {
-          setParticipants(prev => {
-            const updated = prev.map(p => p.id === connection.peer ? {
-              ...p,
-              score: data.result?.score ?? p.score,
-              status: data.type === 'TERMINATE_CONTEST' ? 'terminated' : 'completed',
-              result: data.result
-            } : p);
+              // Relay final results to all guests
+              connsMapRef.current.forEach((connItem) => {
+                try {
+                  if (connItem && connItem.open) {
+                    connItem.send({ type: 'ROOM_PROGRESS', participants: updated });
+                  }
+                } catch(e){}
+              });
 
-            // Relay results to all guests
-            connsRef.current.forEach(c => {
-              try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+              return updated;
             });
-
-            return updated;
-          });
-        }
-      });
-
-      connection.on('close', () => {
-        connsRef.current = connsRef.current.filter(c => c.peer !== connection.peer);
-        setParticipants(prev => {
-          const updated = prev.filter(p => p.id !== connection.peer);
-          connsRef.current.forEach(c => {
-            try { c.send({ type: 'LOBBY_STATE', participants: updated, hostName: playerName }); } catch(e){}
-          });
-          return updated;
+          }
         });
-      });
+
+        c.on('close', () => {
+          connsMapRef.current.delete(c.peer);
+          connsRef.current = Array.from(connsMapRef.current.values());
+          setParticipants(prev => {
+            const updated = prev.filter(p => p.id !== c.peer);
+            connsMapRef.current.forEach((connItem) => {
+              try {
+                if (connItem && connItem.open) {
+                  connItem.send({ type: 'LOBBY_STATE', participants: updated, hostName: playerName });
+                }
+              } catch(e){}
+            });
+            return updated;
+          });
+        });
+      };
+
+      if (connection.open) {
+        registerDataHandler(connection);
+      } else {
+        connection.on('open', () => registerDataHandler(connection));
+      }
     };
 
     peer.on('connection', handleConnection);
@@ -294,12 +329,17 @@ export const QuizProvider = ({ children }) => {
 
     const initialParticipants = [
       hostEntry,
-      ...participants.filter(p => p.id !== hostEntry.id)
+      ...participants.filter(p => p.id !== hostEntry.id).map(p => ({
+        ...p,
+        status: 'in-progress',
+        currentQuestionIndex: 0,
+        score: 0
+      }))
     ];
 
     setParticipants(initialParticipants);
 
-    // Broadcast START_CONTEST payload to all guests
+    // Broadcast START_CONTEST payload to all guests in connsMapRef
     const startPayload = {
       type: 'START_CONTEST',
       quiz: quiz,
@@ -307,9 +347,27 @@ export const QuizProvider = ({ children }) => {
       participants: initialParticipants
     };
 
-    connsRef.current.forEach(c => {
-      try { c.send(startPayload); } catch(e){}
+    // Immediate broadcast to all open connections
+    connsMapRef.current.forEach((c, peerId) => {
+      try {
+        if (c && c.open) {
+          c.send(startPayload);
+        }
+      } catch(e) {
+        console.error(`Start contest send error for ${peerId}:`, e);
+      }
     });
+
+    // Backup retry send after 300ms to guarantee delivery to all participants
+    setTimeout(() => {
+      connsMapRef.current.forEach((c) => {
+        try {
+          if (c && c.open) {
+            c.send(startPayload);
+          }
+        } catch(e){}
+      });
+    }, 300);
 
     // Start local quiz session for Host
     setActiveQuiz(quiz);
@@ -337,7 +395,6 @@ export const QuizProvider = ({ children }) => {
       );
 
       const myId = peer ? peer.id : (isHost ? 'host' : 'guest');
-      const myName = playerName.trim() || (isHost ? 'Host' : 'Player');
 
       if (isHost) {
         // Host updates own record in participants and broadcasts ROOM_PROGRESS
@@ -349,8 +406,12 @@ export const QuizProvider = ({ children }) => {
             status: sessionStatus
           } : p);
 
-          connsRef.current.forEach(c => {
-            try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+          connsMapRef.current.forEach((c) => {
+            try {
+              if (c && c.open) {
+                c.send({ type: 'ROOM_PROGRESS', participants: updated });
+              }
+            } catch(e){}
           });
 
           return updated;
@@ -358,14 +419,16 @@ export const QuizProvider = ({ children }) => {
       } else if (conn) {
         // Guest sends progress update to Host
         try {
-          conn.send({
-            type: 'PROGRESS_UPDATE',
-            peerId: myId,
-            name: myName,
-            currentQuestionIndex,
-            score: calculated.score,
-            status: sessionStatus
-          });
+          if (conn.open) {
+            conn.send({
+              type: 'PROGRESS_UPDATE',
+              peerId: myId,
+              name: playerName.trim() || 'Player',
+              currentQuestionIndex,
+              score: calculated.score,
+              status: sessionStatus
+            });
+          }
         } catch(e) {
           console.error("Failed to send progress update:", e);
         }

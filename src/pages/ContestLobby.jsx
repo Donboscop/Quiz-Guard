@@ -121,7 +121,7 @@ export const ContestLobby = () => {
     guestPeer.on('open', () => {
       setPeer(guestPeer);
       
-      const connection = guestPeer.connect(inputCode.trim());
+      const connection = guestPeer.connect(inputCode.trim(), { reliable: true });
       
       connection.on('open', () => {
         setConn(connection);
@@ -135,6 +135,18 @@ export const ContestLobby = () => {
           type: 'HANDSHAKE',
           name: playerName.trim()
         });
+
+        // Backup retry send after 350ms to guarantee Host registers guest name
+        setTimeout(() => {
+          try {
+            if (connection.open) {
+              connection.send({
+                type: 'HANDSHAKE',
+                name: playerName.trim()
+              });
+            }
+          } catch(e){}
+        }, 350);
       });
 
       connection.on('error', (err) => {

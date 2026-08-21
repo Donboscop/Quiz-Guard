@@ -14,7 +14,7 @@ export const QuizProvider = ({ children }) => {
   const [focusWarnings, setFocusWarnings] = useState(0);
   const [sessionStatus, setSessionStatus] = useState('idle'); // 'idle' | 'in-progress' | 'completed' | 'terminated' | 'time-expired'
   const [terminationReason, setTerminationReason] = useState('');
-  
+
   // Warning modal state
   const [warningModal, setWarningModal] = useState({
     isOpen: false,
@@ -60,16 +60,16 @@ export const QuizProvider = ({ children }) => {
 
   const resetMultiplayer = useCallback(() => {
     if (conn) {
-      try { conn.close(); } catch(e){}
+      try { conn.close(); } catch (e) { }
     }
     connsMapRef.current.forEach(c => {
-      try { c.close(); } catch(e){}
+      try { c.close(); } catch (e) { }
     });
     connsMapRef.current.clear();
     connsRef.current = [];
 
     if (peer) {
-      try { peer.destroy(); } catch(e){}
+      try { peer.destroy(); } catch (e) { }
     }
     setPeerState(null);
     setConnState(null);
@@ -88,7 +88,7 @@ export const QuizProvider = ({ children }) => {
         if (c && c.open) {
           c.send(payload);
         }
-      } catch(e) {
+      } catch (e) {
         console.error(`[Broadcast Error] ${peerId}:`, e);
       }
     });
@@ -120,8 +120,8 @@ export const QuizProvider = ({ children }) => {
               type: 'ROOM_ERROR',
               message: 'Room is full! Maximum limit of 50 participants reached for this live contest.'
             });
-          } catch(e){}
-          setTimeout(() => { try { connection.close(); } catch(e){} }, 500);
+          } catch (e) { }
+          setTimeout(() => { try { connection.close(); } catch (e) { } }, 500);
         });
         return;
       }
@@ -153,7 +153,7 @@ export const QuizProvider = ({ children }) => {
                     type: 'ROOM_ERROR',
                     message: 'Room is full! Maximum limit of 50 participants reached.'
                   });
-                } catch(e){}
+                } catch (e) { }
                 return prev;
               }
 
@@ -179,13 +179,13 @@ export const QuizProvider = ({ children }) => {
                 participants: updated,
                 hostName: playerName.trim() || 'Host'
               };
-              
+
               connsMapRef.current.forEach((connItem) => {
                 try {
                   if (connItem && connItem.open) {
                     connItem.send(lobbyPayload);
                   }
-                } catch(e){}
+                } catch (e) { }
               });
 
               return updated;
@@ -207,7 +207,7 @@ export const QuizProvider = ({ children }) => {
                   if (connItem && connItem.open) {
                     connItem.send({ type: 'ROOM_PROGRESS', participants: updated });
                   }
-                } catch(e){}
+                } catch (e) { }
               });
 
               return updated;
@@ -227,7 +227,7 @@ export const QuizProvider = ({ children }) => {
                   if (connItem && connItem.open) {
                     connItem.send({ type: 'ROOM_PROGRESS', participants: updated });
                   }
-                } catch(e){}
+                } catch (e) { }
               });
 
               return updated;
@@ -245,7 +245,7 @@ export const QuizProvider = ({ children }) => {
                 if (connItem && connItem.open) {
                   connItem.send({ type: 'LOBBY_STATE', participants: updated, hostName: playerName });
                 }
-              } catch(e){}
+              } catch (e) { }
             });
             return updated;
           });
@@ -278,7 +278,7 @@ export const QuizProvider = ({ children }) => {
           if (c && c.open) {
             c.send({ type: 'PING' });
           }
-        } catch(e){}
+        } catch (e) { }
       });
     }, 2000);
 
@@ -295,7 +295,7 @@ export const QuizProvider = ({ children }) => {
           if (conn && conn.open) {
             conn.send({ type: 'PONG' });
           }
-        } catch(e){}
+        } catch (e) { }
       } else if (data.type === 'LOBBY_STATE') {
         setParticipants(data.participants || []);
         if (data.hostName) setOpponentName(data.hostName);
@@ -375,7 +375,7 @@ export const QuizProvider = ({ children }) => {
           if (c && c.open) {
             c.send(startPayload);
           }
-        } catch(e) {
+        } catch (e) {
           console.error(`Start contest send error for ${peerId}:`, e);
         }
       });
@@ -429,7 +429,7 @@ export const QuizProvider = ({ children }) => {
               if (c && c.open) {
                 c.send({ type: 'ROOM_PROGRESS', participants: updated });
               }
-            } catch(e){}
+            } catch (e) { }
           });
 
           return updated;
@@ -447,31 +447,12 @@ export const QuizProvider = ({ children }) => {
               status: sessionStatus
             });
           }
-        } catch(e) {
+        } catch (e) {
           console.error("Failed to send progress update:", e);
         }
       }
     }
   }, [currentQuestionIndex, userAnswers, isContestMode, conn, sessionStatus, activeQuiz, timeRemaining, isHost, peer, playerName]);
-
-  // Issue focus warning (tab switch, etc.)
-  const issueFocusWarning = useCallback((title, message) => {
-    setFocusWarnings(prev => {
-      const nextCount = prev + 1;
-      // Allow 2 focus warnings before termination on 3rd violation
-      if (nextCount >= 3) {
-        terminateQuiz("Multiple focus violations detected (tab switching / window defocus).");
-      } else {
-        setWarningModal({
-          isOpen: true,
-          title: title || "Focus Warning Issued",
-          message: message || `Warning ${nextCount}/2: You have moved away from active test window. Repeated violations will terminate your attempt.`,
-          type: "warning"
-        });
-      }
-      return nextCount;
-    });
-  }, [terminateQuiz]);
 
   // Restore session from localStorage on mount if valid
   useEffect(() => {
@@ -528,7 +509,7 @@ export const QuizProvider = ({ children }) => {
         let currentArr = Array.isArray(current)
           ? [...current]
           : (current !== undefined && current !== null && current !== '' ? [current] : []);
-        
+
         if (currentArr.includes(optionIndex)) {
           currentArr = currentArr.filter(i => i !== optionIndex);
         } else {
@@ -549,7 +530,7 @@ export const QuizProvider = ({ children }) => {
 
   // Toggle mark for review
   const toggleMarkForReview = useCallback((questionId) => {
-    setMarkedForReview(prev => 
+    setMarkedForReview(prev =>
       prev.includes(questionId)
         ? prev.filter(id => id !== questionId)
         : [...prev, questionId]
@@ -621,12 +602,12 @@ export const QuizProvider = ({ children }) => {
       };
       if (isHost) {
         connsRef.current.forEach(c => {
-          try { c.send(finishPayload); } catch(e){}
+          try { c.send(finishPayload); } catch (e) { }
         });
       } else if (conn) {
         try {
           conn.send(finishPayload);
-        } catch(e) {
+        } catch (e) {
           console.error("Failed to send final results payload:", e);
         }
       }
@@ -692,12 +673,12 @@ export const QuizProvider = ({ children }) => {
       };
       if (isHost) {
         connsRef.current.forEach(c => {
-          try { c.send(termPayload); } catch(e){}
+          try { c.send(termPayload); } catch (e) { }
         });
       } else if (conn) {
         try {
           conn.send(termPayload);
-        } catch(e) {
+        } catch (e) {
           console.error("Failed to send termination message:", e);
         }
       }

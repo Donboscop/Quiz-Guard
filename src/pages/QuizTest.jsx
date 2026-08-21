@@ -28,7 +28,10 @@ export const QuizTest = () => {
     issueFocusWarning,
     isContestMode,
     opponentName,
-    opponentProgress
+    opponentProgress,
+    participants,
+    playerName,
+    isHost
   } = useQuiz();
 
   // If no active quiz loaded in context, reload from quizzes database
@@ -120,44 +123,45 @@ export const QuizTest = () => {
         <MobileNotice />
 
         {isContestMode && (
-          <div className="mb-6 p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
-            <div className="flex items-center gap-2 text-indigo-400">
-              <Users className="w-5 h-5 animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider">Live Quiz Duel</span>
+          <div className="mb-6 p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-indigo-400">
+                <Users className="w-5 h-5 animate-pulse" />
+                <span className="text-xs font-bold uppercase tracking-wider">Live Arena Room ({participants.length || 1} Players)</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium bg-slate-950 px-2 py-0.5 rounded border border-slate-800">Real-Time Sync Active</span>
             </div>
-            
-            <div className="flex items-center gap-6 w-full sm:w-auto justify-around">
-              {/* User Progress */}
-              <div className="text-center sm:text-left space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">You</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-white">Q {currentQuestionIndex + 1}/{activeQuiz.questions.length}</span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-500/10 text-brand-400 border border-brand-500/20 capitalize">
-                    {sessionStatus === 'in-progress' ? 'Solving' : sessionStatus}
-                  </span>
-                </div>
-              </div>
 
-              <div className="h-8 w-[1px] bg-slate-800 hidden sm:block" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-800/80">
+              {(participants.length > 0 ? participants : [
+                { name: playerName || 'You', isUser: true, currentQuestionIndex, status: sessionStatus },
+                { name: opponentName || 'Opponent', currentQuestionIndex: opponentProgress?.currentQuestionIndex ?? 0, status: opponentProgress?.status || 'in-progress' }
+              ]).map((p) => {
+                const isMe = p.name === playerName || p.isUser || (isHost && p.isHost);
+                const qIdx = isMe ? currentQuestionIndex : (p.currentQuestionIndex ?? 0);
+                const displayStatus = isMe ? sessionStatus : (p.status || 'in-progress');
 
-              {/* Opponent Progress */}
-              <div className="text-center sm:text-left space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">{opponentName || "Opponent"}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-white">
-                    Q {(opponentProgress?.currentQuestionIndex ?? 0) + 1}/{activeQuiz.questions.length}
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border capitalize ${
-                    opponentProgress?.status === 'terminated'
-                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                      : opponentProgress?.status === 'completed'
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                  }`}>
-                    {opponentProgress?.status === 'in-progress' ? 'Solving' : (opponentProgress?.status || 'Joining...')}
-                  </span>
-                </div>
-              </div>
+                return (
+                  <div key={p.id || p.name} className={`p-2.5 rounded-xl border ${isMe ? 'bg-brand-500/10 border-brand-500/40' : 'bg-slate-950 border-slate-800'}`}>
+                    <div className="flex items-center justify-between text-xs font-bold text-white">
+                      <span className="truncate max-w-[90px]">{p.name}</span>
+                      {isMe && <span className="text-[9px] text-brand-300 font-black bg-brand-500/20 px-1 rounded">YOU</span>}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] mt-1 text-slate-400 font-semibold">
+                      <span>Q {qIdx + 1}/{activeQuiz.questions.length}</span>
+                      <span className={`px-1 py-0.2 rounded text-[9px] font-bold capitalize ${
+                        displayStatus === 'terminated'
+                          ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          : displayStatus === 'completed'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      }`}>
+                        {displayStatus === 'in-progress' ? 'Solving' : displayStatus}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

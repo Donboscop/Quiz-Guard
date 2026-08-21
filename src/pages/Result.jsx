@@ -11,7 +11,7 @@ import { motion } from 'framer-motion';
 
 export const Result = () => {
   const { id } = useParams();
-  const { latestResult, isContestMode, opponentName, opponentResult, playerName } = useQuiz();
+  const { latestResult, isContestMode, opponentName, opponentResult, playerName, participants } = useQuiz();
 
   const result = latestResult || {
     score: 0,
@@ -44,40 +44,67 @@ export const Result = () => {
   // Construct players array for contest leaderboard sorting
   const leaderboard = [];
   if (isContestMode) {
-    leaderboard.push({
-      name: playerName.trim() || 'You',
-      score: result.score,
-      percentage: result.percentage,
-      timeTaken: result.timeTakenSeconds,
-      status: result.status,
-      isUser: true
-    });
-
-    if (opponentResult) {
-      leaderboard.push({
-        name: opponentName || 'Opponent',
-        score: opponentResult.score,
-        percentage: opponentResult.percentage,
-        timeTaken: opponentResult.timeTakenSeconds,
-        status: opponentResult.status,
-        isUser: false
+    if (participants && participants.length > 0) {
+      participants.forEach(p => {
+        const isUser = p.name === playerName || (p.isHost && (playerName === p.name || !playerName));
+        if (isUser) {
+          leaderboard.push({
+            name: p.name || playerName.trim() || 'You',
+            score: result.score,
+            percentage: result.percentage,
+            timeTaken: result.timeTakenSeconds,
+            status: result.status,
+            isUser: true
+          });
+        } else {
+          const res = p.result;
+          leaderboard.push({
+            name: p.name || 'Participant',
+            score: res ? res.score : (p.score || 0),
+            percentage: res ? res.percentage : 0,
+            timeTaken: res ? res.timeTakenSeconds : 0,
+            status: p.status === 'completed' ? 'Completed' : p.status === 'terminated' ? 'Terminated' : (p.status || 'Solving...'),
+            isUser: false,
+            isPending: p.status === 'in-progress' || p.status === 'in-lobby'
+          });
+        }
       });
     } else {
       leaderboard.push({
-        name: opponentName || 'Opponent',
-        score: 0,
-        percentage: 0,
-        timeTaken: 0,
-        status: 'Solving...',
-        isUser: false,
-        isPending: true
+        name: playerName.trim() || 'You',
+        score: result.score,
+        percentage: result.percentage,
+        timeTaken: result.timeTakenSeconds,
+        status: result.status,
+        isUser: true
       });
+
+      if (opponentResult) {
+        leaderboard.push({
+          name: opponentName || 'Opponent',
+          score: opponentResult.score,
+          percentage: opponentResult.percentage,
+          timeTaken: opponentResult.timeTakenSeconds,
+          status: opponentResult.status,
+          isUser: false
+        });
+      } else {
+        leaderboard.push({
+          name: opponentName || 'Opponent',
+          score: 0,
+          percentage: 0,
+          timeTaken: 0,
+          status: 'Solving...',
+          isUser: false,
+          isPending: true
+        });
+      }
     }
 
     // Sort: Non-pending first, higher score first, lower time taken next
     leaderboard.sort((a, b) => {
-      if (a.isPending) return 1;
-      if (b.isPending) return -1;
+      if (a.isPending && !b.isPending) return 1;
+      if (!a.isPending && b.isPending) return -1;
       if (b.score !== a.score) {
         return b.score - a.score;
       }

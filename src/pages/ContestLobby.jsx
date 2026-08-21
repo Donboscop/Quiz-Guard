@@ -307,66 +307,84 @@ export const ContestLobby = () => {
               </p>
             </div>
 
-            {/* Connection status card */}
-            <div className="p-4 rounded-xl border flex items-center justify-center gap-3 transition-all bg-slate-950/40 border-slate-800">
-              {conn ? (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-xs font-semibold text-slate-300">
-                    Connected with <strong className="text-emerald-400">{opponentName || "Guest"}</strong>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
-                  <span className="text-xs font-medium text-slate-400 animate-pulse">
-                    Waiting for opponent to connect...
-                  </span>
-                </>
+            {/* Connection status & Participants List card */}
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4 text-left">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Joined Room Participants ({participants.length > 0 ? participants.length : 1})
+                </span>
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Live Room Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Host */}
+                <div className="p-3 rounded-xl bg-slate-900 border border-brand-500/40 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-xs font-bold text-white">{playerName.trim() || "Host"}</span>
+                  </div>
+                  <span className="text-[9px] font-black bg-brand-500/20 text-brand-300 border border-brand-500/30 px-2 py-0.5 rounded">HOST (YOU)</span>
+                </div>
+
+                {/* Connected Guests */}
+                {participants.filter(p => !p.isHost).map(p => (
+                  <div key={p.id || p.name} className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                      <span className="text-xs font-bold text-white">{p.name}</span>
+                    </div>
+                    <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">READY</span>
+                  </div>
+                ))}
+              </div>
+
+              {participants.filter(p => !p.isHost).length === 0 && (
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 text-center text-xs text-slate-400 font-medium animate-pulse">
+                  Waiting for friends to join using the Lobby Code above...
+                </div>
               )}
             </div>
 
             {/* Host Quiz Selection Form */}
-            {conn && (
-              <div className="space-y-4 pt-4 border-t border-slate-800/80 text-left">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Choose Assessment topic</label>
-                  <select
-                    value={selectedQuizId}
-                    onChange={(e) => setSelectedQuizId(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
-                  >
-                    {quizzes.map(quiz => (
-                      <option key={quiz.id} value={quiz.id}>{quiz.title} ({quiz.category})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="pt-2 flex justify-center">
-                  <Button
-                    onClick={handleStartContest}
-                    variant="primary"
-                    size="lg"
-                    icon={Play}
-                  >
-                    Start Live Contest
-                  </Button>
-                </div>
+            <div className="space-y-4 pt-4 border-t border-slate-800/80 text-left">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Choose Assessment topic</label>
+                <select
+                  value={selectedQuizId}
+                  onChange={(e) => setSelectedQuizId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
+                >
+                  {quizzes.map(quiz => (
+                    <option key={quiz.id} value={quiz.id}>{quiz.title} ({quiz.category})</option>
+                  ))}
+                </select>
               </div>
-            )}
+
+              <div className="pt-2 flex justify-center">
+                <Button
+                  onClick={handleStartContest}
+                  variant="primary"
+                  size="lg"
+                  icon={Play}
+                >
+                  Start Live Contest ({participants.length > 0 ? participants.length : 1} Players)
+                </Button>
+              </div>
+            </div>
             
-            {!conn && (
-              <button
-                type="button"
-                onClick={() => {
-                  resetMultiplayer();
-                  setLobbyMode('select');
-                }}
-                className="text-xs font-semibold text-slate-400 hover:text-white underline pt-2 block mx-auto focus:outline-none"
-              >
-                Cancel and Host Later
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                resetMultiplayer();
+                setLobbyMode('select');
+              }}
+              className="text-xs font-semibold text-slate-400 hover:text-white underline pt-2 block mx-auto focus:outline-none"
+            >
+              Cancel and Close Room
+            </button>
 
           </div>
         )}
@@ -420,15 +438,35 @@ export const ContestLobby = () => {
             <div className="space-y-1">
               <h3 className="font-display font-bold text-lg text-white">Lobby Connection Successful!</h3>
               <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                Connected with host <strong className="text-brand-400">{opponentName || "Host"}</strong>.
+                Connected to host <strong className="text-brand-400">{opponentName || "Host"}</strong>'s Room.
               </p>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
-              <span className="text-xs font-semibold text-slate-300 animate-pulse">
-                Waiting for host to select quiz and start...
-              </span>
+            {/* Room Participants Card */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Joined Room Players ({participants.length > 0 ? participants.length : 1})
+                </span>
+                <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Waiting for Host to start
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {participants.map(p => (
+                  <div key={p.id || p.name} className={`p-2.5 rounded-xl border flex items-center justify-between ${p.name === playerName ? 'bg-brand-500/10 border-brand-500/40' : 'bg-slate-900 border-slate-800'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-xs font-bold text-white">{p.name}</span>
+                    </div>
+                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${p.isHost ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30' : (p.name === playerName ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30' : 'bg-slate-800 text-slate-400')}`}>
+                      {p.isHost ? 'HOST' : (p.name === playerName ? 'YOU' : 'READY')}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <button

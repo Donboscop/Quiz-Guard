@@ -29,7 +29,9 @@ export const QuizProvider = ({ children }) => {
 
   // Multiplayer Live Contest states
   const [peer, setPeerState] = useState(null);
-  const [conn, setConnState] = useState(null);
+  const [conn, setConnState] = useState(null); // Single connection for Guest -> Host
+  const connsRef = useRef([]); // Host's connections array for all joined guests
+  const [participants, setParticipants] = useState([]); // Master list of participants in room
   const [isContestMode, setIsContestMode] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [opponentProgress, setOpponentProgress] = useState(null);
@@ -58,11 +60,17 @@ export const QuizProvider = ({ children }) => {
     if (conn) {
       try { conn.close(); } catch(e){}
     }
+    connsRef.current.forEach(c => {
+      try { c.close(); } catch(e){}
+    });
+    connsRef.current = [];
+
     if (peer) {
       try { peer.destroy(); } catch(e){}
     }
     setPeerState(null);
     setConnState(null);
+    setParticipants([]);
     setIsContestMode(false);
     setIsHost(false);
     setOpponentProgress(null);
@@ -70,30 +78,122 @@ export const QuizProvider = ({ children }) => {
     setOpponentName('');
   }, [conn, peer]);
 
+  // Host helper to broadcast data to all connected guests
+  const broadcastToAll = useCallback((payload) => {
+    connsRef.current.forEach(c => {
+      try { c.send(payload); } catch(e){}
+    });
+  }, []);
+
   // Handle incoming P2P connections on Host
   useEffect(() => {
     if (!peer) return;
 
     const handleConnection = (connection) => {
+      // Add connection to Host's list if not present
+      if (!connsRef.current.some(c => c.peer === connection.peer)) {
+        connsRef.current.push(connection);
+      }
       setConnState(connection);
+
+      // Listen for data from this guest
+      connection.on('data', (data) => {
+        if (data.type === 'HANDSHAKE') {
+          const newGuest = {
+            id: connection.peer,
+            name: data.name || 'Guest',
+            isHost: false,
+            currentQuestionIndex: 0,
+            score: 0,
+            status: 'in-lobby'
+          };
+
+          setParticipants(prev => {
+            const exists = prev.some(p => p.id === connection.peer);
+            const updated = exists
+              ? prev.map(p => p.id === connection.peer ? { ...p, name: data.name } : p)
+              : [...prev, newGuest];
+
+            // Host broadcasts updated LOBBY_STATE to ALL guests
+            const lobbyPayload = {
+              type: 'LOBBY_STATE',
+              participants: updated,
+              hostName: playerName.trim() || 'Host'
+            };
+            connsRef.current.forEach(c => {
+              try { c.send(lobbyPayload); } catch(e){}
+            });
+
+            return updated;
+          });
+
+          setOpponentName(data.name || 'Guest');
+        } else if (data.type === 'PROGRESS_UPDATE') {
+          setParticipants(prev => {
+            const updated = prev.map(p => p.id === connection.peer ? {
+              ...p,
+              currentQuestionIndex: data.currentQuestionIndex,
+              score: data.score,
+              status: data.status
+            } : p);
+
+            // Relay progress to all guests
+            connsRef.current.forEach(c => {
+              try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+            });
+
+            return updated;
+          });
+        } else if (data.type === 'FINISH_CONTEST' || data.type === 'TERMINATE_CONTEST') {
+          setParticipants(prev => {
+            const updated = prev.map(p => p.id === connection.peer ? {
+              ...p,
+              score: data.result?.score ?? p.score,
+              status: data.type === 'TERMINATE_CONTEST' ? 'terminated' : 'completed',
+              result: data.result
+            } : p);
+
+            // Relay results to all guests
+            connsRef.current.forEach(c => {
+              try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+            });
+
+            return updated;
+          });
+        }
+      });
+
+      connection.on('close', () => {
+        connsRef.current = connsRef.current.filter(c => c.peer !== connection.peer);
+        setParticipants(prev => {
+          const updated = prev.filter(p => p.id !== connection.peer);
+          connsRef.current.forEach(c => {
+            try { c.send({ type: 'LOBBY_STATE', participants: updated, hostName: playerName }); } catch(e){}
+          });
+          return updated;
+        });
+      });
     };
 
     peer.on('connection', handleConnection);
     return () => {
       peer.off('connection', handleConnection);
     };
-  }, [peer]);
+  }, [peer, playerName]);
 
   // Set Peer and Connection states safely
   const setPeer = (p) => setPeerState(p);
   const setConn = (c) => setConnState(c);
 
-  // Handle WebRTC messaging/sync events
+  // Guest-side: Listen for messages from Host connection
   useEffect(() => {
-    if (!conn) return;
+    if (!conn || isHost) return;
 
     const handleData = (data) => {
-      if (data.type === 'START_CONTEST') {
+      if (data.type === 'LOBBY_STATE') {
+        setParticipants(data.participants || []);
+        if (data.hostName) setOpponentName(data.hostName);
+      } else if (data.type === 'START_CONTEST') {
         setActiveQuiz(data.quiz);
         setCurrentQuestionIndex(0);
         setUserAnswers({});
@@ -106,32 +206,12 @@ export const QuizProvider = ({ children }) => {
         setLatestResult(null);
         setIsContestMode(true);
         setIsHost(false);
-        setOpponentName(data.hostName);
-        setOpponentProgress({
-          currentQuestionIndex: 0,
-          score: 0,
-          status: 'in-progress',
-          name: data.hostName
-        });
-        setOpponentResult(null);
-      } else if (data.type === 'PROGRESS_UPDATE') {
-        setOpponentProgress(prev => prev ? {
-          ...prev,
-          currentQuestionIndex: data.currentQuestionIndex,
-          score: data.score,
-          status: data.status
-        } : {
-          currentQuestionIndex: data.currentQuestionIndex,
-          score: data.score,
-          status: data.status,
-          name: opponentName
-        });
-      } else if (data.type === 'FINISH_CONTEST') {
-        setOpponentResult(data.result);
-        setOpponentProgress(prev => prev ? { ...prev, status: 'completed', score: data.result.score } : null);
-      } else if (data.type === 'TERMINATE_CONTEST') {
-        setOpponentResult(data.result);
-        setOpponentProgress(prev => prev ? { ...prev, status: 'terminated' } : null);
+        if (data.participants) setParticipants(data.participants);
+        if (data.hostName) setOpponentName(data.hostName);
+      } else if (data.type === 'ROOM_PROGRESS') {
+        if (data.participants) {
+          setParticipants(data.participants);
+        }
       }
     };
 
@@ -144,29 +224,102 @@ export const QuizProvider = ({ children }) => {
     return () => {
       conn.off('data', handleData);
     };
-  }, [conn, opponentName]);
+  }, [conn, isHost]);
+
+  // Host starts contest for ALL connected participants
+  const startContest = useCallback((quiz) => {
+    if (!quiz) return;
+
+    // Ensure host is included in participants
+    const hostEntry = {
+      id: peer ? peer.id : 'host',
+      name: playerName.trim() || 'Host',
+      isHost: true,
+      currentQuestionIndex: 0,
+      score: 0,
+      status: 'in-progress'
+    };
+
+    const initialParticipants = [
+      hostEntry,
+      ...participants.filter(p => p.id !== hostEntry.id)
+    ];
+
+    setParticipants(initialParticipants);
+
+    // Broadcast START_CONTEST payload to all guests
+    const startPayload = {
+      type: 'START_CONTEST',
+      quiz: quiz,
+      hostName: playerName.trim() || 'Host',
+      participants: initialParticipants
+    };
+
+    connsRef.current.forEach(c => {
+      try { c.send(startPayload); } catch(e){}
+    });
+
+    // Start local quiz session for Host
+    setActiveQuiz(quiz);
+    setCurrentQuestionIndex(0);
+    setUserAnswers({});
+    setQuestionTimes({});
+    setMarkedForReview([]);
+    setTimeRemaining(quiz.duration * 60);
+    setFocusWarnings(0);
+    setSessionStatus('in-progress');
+    setTerminationReason('');
+    setLatestResult(null);
+    setIsContestMode(true);
+    setIsHost(true);
+  }, [peer, playerName, participants]);
 
   // Broadcast progress updates during contest mode
   useEffect(() => {
-    if (isContestMode && conn && sessionStatus === 'in-progress' && activeQuiz) {
+    if (isContestMode && sessionStatus === 'in-progress' && activeQuiz) {
       const calculated = calculateResults(
         activeQuiz.questions,
         userAnswers,
         activeQuiz.duration,
         timeRemaining
       );
-      try {
-        conn.send({
-          type: 'PROGRESS_UPDATE',
-          currentQuestionIndex,
-          score: calculated.score,
-          status: sessionStatus
+
+      const myId = peer ? peer.id : (isHost ? 'host' : 'guest');
+      const myName = playerName.trim() || (isHost ? 'Host' : 'Player');
+
+      if (isHost) {
+        // Host updates own record in participants and broadcasts ROOM_PROGRESS
+        setParticipants(prev => {
+          const updated = prev.map(p => (p.isHost || p.id === myId) ? {
+            ...p,
+            currentQuestionIndex,
+            score: calculated.score,
+            status: sessionStatus
+          } : p);
+
+          connsRef.current.forEach(c => {
+            try { c.send({ type: 'ROOM_PROGRESS', participants: updated }); } catch(e){}
+          });
+
+          return updated;
         });
-      } catch(e) {
-        console.error("Failed to broadcast progress:", e);
+      } else if (conn) {
+        // Guest sends progress update to Host
+        try {
+          conn.send({
+            type: 'PROGRESS_UPDATE',
+            peerId: myId,
+            name: myName,
+            currentQuestionIndex,
+            score: calculated.score,
+            status: sessionStatus
+          });
+        } catch(e) {
+          console.error("Failed to send progress update:", e);
+        }
       }
     }
-  }, [currentQuestionIndex, userAnswers, isContestMode, conn, sessionStatus, activeQuiz, timeRemaining]);
+  }, [currentQuestionIndex, userAnswers, isContestMode, conn, sessionStatus, activeQuiz, timeRemaining, isHost, peer, playerName]);
 
   // Restore session from localStorage on mount if valid
   useEffect(() => {
@@ -309,19 +462,26 @@ export const QuizProvider = ({ children }) => {
     setLatestResult(savedRecord);
     clearCurrentQuizState();
 
-    if (isContestMode && conn) {
-      try {
-        conn.send({
-          type: 'FINISH_CONTEST',
-          result: attemptData
+    if (isContestMode) {
+      const finishPayload = {
+        type: 'FINISH_CONTEST',
+        result: attemptData
+      };
+      if (isHost) {
+        connsRef.current.forEach(c => {
+          try { c.send(finishPayload); } catch(e){}
         });
-      } catch(e) {
-        console.error("Failed to send final results payload:", e);
+      } else if (conn) {
+        try {
+          conn.send(finishPayload);
+        } catch(e) {
+          console.error("Failed to send final results payload:", e);
+        }
       }
     }
 
     return savedRecord;
-  }, [activeQuiz, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn]);
+  }, [activeQuiz, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
 
   // Terminate test due to focus violation
   const terminateQuiz = useCallback((reason) => {
@@ -373,19 +533,26 @@ export const QuizProvider = ({ children }) => {
       type: 'warning'
     });
 
-    if (isContestMode && conn) {
-      try {
-        conn.send({
-          type: 'TERMINATE_CONTEST',
-          result: attemptData
+    if (isContestMode) {
+      const termPayload = {
+        type: 'TERMINATE_CONTEST',
+        result: attemptData
+      };
+      if (isHost) {
+        connsRef.current.forEach(c => {
+          try { c.send(termPayload); } catch(e){}
         });
-      } catch(e) {
-        console.error("Failed to send termination message:", e);
+      } else if (conn) {
+        try {
+          conn.send(termPayload);
+        } catch(e) {
+          console.error("Failed to send termination message:", e);
+        }
       }
     }
 
     return savedRecord;
-  }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn]);
+  }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
 
   // Issue focus warning (tab switch, etc.)
   const issueFocusWarning = useCallback((title, message) => {
@@ -425,6 +592,7 @@ export const QuizProvider = ({ children }) => {
       warningModal,
       latestResult,
       startQuiz,
+      startContest,
       selectOption,
       toggleMarkForReview,
       nextQuestion,
@@ -438,6 +606,8 @@ export const QuizProvider = ({ children }) => {
       setPeer,
       conn,
       setConn,
+      participants,
+      setParticipants,
       isContestMode,
       setIsContestMode,
       isHost,

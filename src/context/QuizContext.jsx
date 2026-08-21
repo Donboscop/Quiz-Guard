@@ -687,6 +687,25 @@ export const QuizProvider = ({ children }) => {
     return savedRecord;
   }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
 
+  // Issue focus warning (tab switch, etc.)
+  const issueFocusWarning = useCallback((title, message) => {
+    setFocusWarnings(prev => {
+      const nextCount = prev + 1;
+      // Allow 2 focus warnings before termination on 3rd violation
+      if (nextCount >= 3) {
+        terminateQuiz("Multiple focus violations detected (tab switching / window defocus).");
+      } else {
+        setWarningModal({
+          isOpen: true,
+          title: title || "Focus Warning Issued",
+          message: message || `Warning ${nextCount}/2: You have moved away from active test window. Repeated violations will terminate your attempt.`,
+          type: "warning"
+        });
+      }
+      return nextCount;
+    });
+  }, [terminateQuiz]);
+
   const closeWarningModal = useCallback(() => {
     setWarningModal(prev => ({ ...prev, isOpen: false }));
   }, []);

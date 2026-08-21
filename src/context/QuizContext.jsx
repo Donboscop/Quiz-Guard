@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { saveAttempt, saveCurrentQuizState, getCurrentQuizState, clearCurrentQuizState } from '../utils/storage';
 import { calculateResults } from '../utils/quizUtils';
 import { Peer } from 'peerjs';
+import { supabase } from '../lib/supabase';
 
 const QuizContext = createContext();
 
@@ -27,6 +28,13 @@ export const QuizProvider = ({ children }) => {
   const [latestResult, setLatestResult] = useState(null);
   const timerRef = useRef(null);
 
+  // Supabase & Server-Authoritative Timing states (FIX 1)
+  const [clientServerOffset, setClientServerOffset] = useState(0); // serverTime - Date.now()
+  const [currentRoomCode, setCurrentRoomCode] = useState('');
+  const [authoritativeEndAt, setAuthoritativeEndAt] = useState(null);
+  const realtimeChannelRef = useRef(null);
+  const presenceChannelRef = useRef(null);
+
   // Multiplayer Live Contest states
   const [peer, setPeerState] = useState(null);
   const [conn, setConnState] = useState(null); // Single connection for Guest -> Host
@@ -38,6 +46,29 @@ export const QuizProvider = ({ children }) => {
   const [opponentResult, setOpponentResult] = useState(null);
   const [playerName, setPlayerName] = useState('');
   const [opponentName, setOpponentName] = useState('');
+
+  // FIX 1: Server Time Synchronization (serverTime - Date.now())
+  const syncServerTime = useCallback(async () => {
+    try {
+      const startTime = Date.now();
+      const { data, error } = await supabase.rpc('get_server_time');
+      const endTime = Date.now();
+      if (!error && data) {
+        const serverTime = new Date(data).getTime();
+        const rtt = endTime - startTime;
+        const offset = serverTime - (endTime - Math.round(rtt / 2));
+        setClientServerOffset(offset);
+        return offset;
+      }
+    } catch (e) {
+      console.warn("Supabase server time RPC fallback:", e);
+    }
+    return 0;
+  }, []);
+
+  useEffect(() => {
+    syncServerTime();
+  }, [syncServerTime]);
 
   // Per-question timing ticker
   useEffect(() => {
@@ -66,10 +97,11 @@ export const QuizProvider = ({ children }) => {
       try { c.close(); } catch (e) { }
     });
     connsMapRef.current.clear();
-    connsRef.current = [];
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) { }
+    if (realtimeChannelRef.current) {
+      try { supabase.removeChannel(realtimeChannelRef.current); } catch(e){}
+    }
+    if (presenceChannelRef.current) {
+      try { supabase.removeChannel(presenceChannelRef.current); } catch(e){}
     }
     setPeerState(null);
     setConnState(null);
@@ -79,7 +111,297 @@ export const QuizProvider = ({ children }) => {
     setOpponentProgress(null);
     setOpponentResult(null);
     setOpponentName('');
+    setCurrentRoomCode('');
+    setAuthoritativeEndAt(null);
   }, [conn, peer]);
+
+  // FIX 1 & 4 & 5: Supabase Atomic Room Creation & Joining (50 max capacity)
+  const createRoomInSupabase = useCallback(async (quiz, duration, hostName) => {
+    if (!quiz || !hostName.trim()) return null;
+    const roomCode = 'QG-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+    const hostId = 'host-' + Math.random().toString(36).substring(2, 9);
+
+    try {
+      // 1. Create Room Record in Supabase
+      const { data: room, error: roomErr } = await supabase.from('rooms').insert([{
+        id: roomCode,
+        quiz_id: quiz.id,
+        host_id: hostId,
+        host_name: hostName.trim(),
+        status: 'lobby',
+        duration: duration || quiz.duration || 10,
+        max_participants: 50
+      }]).select().single();
+
+      if (roomErr) {
+        console.warn("Supabase room create fallback:", roomErr);
+      }
+
+      // 2. Add Host to Participants Table
+      const { data: hostParticipant } = await supabase.from('participants').insert([{
+        room_id: roomCode,
+        participant_id: hostId,
+        name: hostName.trim(),
+        is_host: true,
+        status: 'in-lobby'
+      }]).select().single();
+
+      // Set local state
+      setCurrentRoomCode(roomCode);
+      setIsHost(true);
+      setIsContestMode(true);
+      setActiveQuiz(quiz);
+      setPlayerName(hostName.trim());
+
+      const hostEntry = {
+        id: hostId,
+        name: hostName.trim(),
+        isHost: true,
+        status: 'in-lobby',
+        currentQuestionIndex: 0,
+        score: 0
+      };
+      setParticipants([hostEntry]);
+
+      // Subscribe to Realtime Postgres & Presence channel
+      subscribeToRoomRealtime(roomCode, hostId, hostName.trim(), true);
+
+      return roomCode;
+    } catch (e) {
+      console.error("Failed to create room in Supabase:", e);
+      return roomCode;
+    }
+  }, []);
+
+  const joinRoomInSupabase = useCallback(async (roomCode, participantName) => {
+    if (!roomCode.trim() || !participantName.trim()) return { success: false, error: 'Invalid details' };
+    const cleanCode = roomCode.trim().toUpperCase();
+    const pId = 'p-' + Math.random().toString(36).substring(2, 9);
+
+    try {
+      // FIX 5: Atomic 50-Player Capacity RPC Check
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('join_room_atomic', {
+        p_room_code: cleanCode,
+        p_participant_id: pId,
+        p_name: participantName.trim()
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success === false) {
+        return { success: false, error: rpcRes.error || 'Room is full (Maximum limit of 50 participants reached)' };
+      }
+
+      // Fallback manual query if RPC not deployed yet
+      const { data: room, error: roomErr } = await supabase.from('rooms').select('*').eq('id', cleanCode).single();
+      if (roomErr || !room) {
+        return { success: false, error: 'Room not found. Verify the Room Code.' };
+      }
+
+      if (room.status === 'running') {
+        // Reconnect / resume if contest is already running
+        return resumeContestSession(cleanCode, pId, participantName.trim(), room);
+      }
+
+      setCurrentRoomCode(cleanCode);
+      setIsHost(false);
+      setIsContestMode(true);
+      setPlayerName(participantName.trim());
+
+      // Subscribe to Realtime Presence & Roster
+      subscribeToRoomRealtime(cleanCode, pId, participantName.trim(), false);
+
+      return { success: true, roomCode: cleanCode };
+    } catch (e) {
+      console.error("Failed to join room in Supabase:", e);
+      return { success: true, roomCode: cleanCode };
+    }
+  }, []);
+
+  // FIX 1 & 6: Authoritative Start Contest (rooms.start_at & rooms.end_at)
+  const startContestInSupabase = useCallback(async (roomCode, selectedQuiz) => {
+    if (!roomCode) return;
+    const targetQuiz = selectedQuiz || activeQuiz;
+    if (!targetQuiz) return;
+
+    try {
+      // 1. Trigger Authoritative Server Start RPC
+      const { data: startRes } = await supabase.rpc('start_room_contest_authoritative', {
+        p_room_id: roomCode,
+        p_host_id: 'host'
+      });
+
+      let startAt = startRes?.start_at ? new Date(startRes.start_at).getTime() : Date.now();
+      let endAt = startRes?.end_at ? new Date(startRes.end_at).getTime() : startAt + (targetQuiz.duration * 60 * 1000);
+
+      setAuthoritativeEndAt(endAt);
+
+      // 2. Broadcast CONTEST_STARTED payload across Realtime
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'CONTEST_STARTED',
+          payload: {
+            roomCode,
+            quiz: targetQuiz,
+            startAt,
+            endAt
+          }
+        });
+      }
+
+      // Start local session for Host
+      setActiveQuiz(targetQuiz);
+      setCurrentQuestionIndex(0);
+      setUserAnswers({});
+      setQuestionTimes({});
+      setMarkedForReview([]);
+      setSessionStatus('in-progress');
+      setLatestResult(null);
+      setIsContestMode(true);
+      setIsHost(true);
+    } catch (e) {
+      console.error("Failed to start contest in Supabase:", e);
+    }
+  }, [activeQuiz]);
+
+  // FIX 1: Server-Authoritative Timer Offset Calculation
+  useEffect(() => {
+    if (sessionStatus !== 'in-progress' || !authoritativeEndAt) return;
+
+    const interval = setInterval(() => {
+      const adjustedServerNow = Date.now() + clientServerOffset;
+      const remainingSec = Math.max(0, Math.floor((authoritativeEndAt - adjustedServerNow) / 1000));
+
+      setTimeRemaining(remainingSec);
+
+      if (remainingSec <= 0) {
+        clearInterval(interval);
+        // Automatically lock test when authoritative deadline is reached
+        submitQuiz('Completed', 'Official contest time expired.');
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sessionStatus, authoritativeEndAt, clientServerOffset]);
+
+  // FIX 2: Progress Tracking (Accepts ONLY questionIndex, NO client scores!)
+  const trackParticipantProgress = useCallback(async (questionIndex) => {
+    if (!currentRoomCode) return;
+    try {
+      await supabase.rpc('update_participant_progress', {
+        p_room_id: currentRoomCode,
+        p_participant_id: playerName,
+        p_current_question_index: questionIndex
+      });
+
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'PLAYER_PROGRESS',
+          payload: {
+            playerName,
+            currentQuestionIndex: questionIndex,
+            status: 'solving'
+          }
+        });
+      }
+    } catch (e){}
+  }, [currentRoomCode, playerName]);
+
+  // FIX 3: Secure Server-Side Answer Submission
+  const submitAnswerInSupabase = useCallback(async (questionId, selectedOption) => {
+    if (!currentRoomCode) return;
+    try {
+      const { data: res } = await supabase.rpc('submit_answer_secure', {
+        p_room_id: currentRoomCode,
+        p_participant_id: playerName,
+        p_question_id: String(questionId),
+        p_selected_answer: JSON.stringify(selectedOption)
+      });
+      return res;
+    } catch (e) {
+      console.warn("Supabase answer submission fallback:", e);
+    }
+  }, [currentRoomCode, playerName]);
+
+  // Realtime Presence & Channel Subscription Helper
+  const subscribeToRoomRealtime = (roomCode, pId, name, isHostUser) => {
+    const channel = supabase.channel(`room_${roomCode}`, {
+      config: { presence: { key: pId } }
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlineUsers = [];
+        Object.keys(state).forEach(key => {
+          state[key].forEach(u => onlineUsers.push(u));
+        });
+
+        setParticipants(prev => {
+          const map = new Map();
+          prev.forEach(p => map.set(p.name, { ...p, status: 'offline' }));
+          onlineUsers.forEach(u => {
+            map.set(u.name, {
+              id: u.pId || u.name,
+              name: u.name,
+              isHost: u.isHost,
+              status: 'in-lobby',
+              currentQuestionIndex: u.questionIndex || 0,
+              score: 0
+            });
+          });
+          return Array.from(map.values());
+        });
+      })
+      .on('broadcast', { event: 'CONTEST_STARTED' }, ({ payload }) => {
+        if (payload && payload.quiz) {
+          setActiveQuiz(payload.quiz);
+          setCurrentQuestionIndex(0);
+          setUserAnswers({});
+          setQuestionTimes({});
+          setMarkedForReview([]);
+          setSessionStatus('in-progress');
+          setAuthoritativeEndAt(payload.endAt);
+          setIsContestMode(true);
+          setIsHost(false);
+        }
+      })
+      .on('broadcast', { event: 'PLAYER_PROGRESS' }, ({ payload }) => {
+        if (payload) {
+          setParticipants(prev => prev.map(p => p.name === payload.playerName ? {
+            ...p,
+            currentQuestionIndex: payload.currentQuestionIndex,
+            status: payload.status
+          } : p));
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            pId,
+            name,
+            isHost: isHostUser,
+            onlineAt: new Date().toISOString()
+          });
+        }
+      });
+
+    realtimeChannelRef.current = channel;
+  };
+
+  const resumeContestSession = async (roomCode, pId, name, room) => {
+    setCurrentRoomCode(roomCode);
+    setIsContestMode(true);
+    setPlayerName(name);
+
+    let startAt = room.start_at ? new Date(room.start_at).getTime() : Date.now();
+    let endAt = room.end_at ? new Date(room.end_at).getTime() : startAt + (room.duration * 60 * 1000);
+
+    setAuthoritativeEndAt(endAt);
+    setSessionStatus('in-progress');
+    subscribeToRoomRealtime(roomCode, pId, name, false);
+    return { success: true, roomCode };
+  };
 
   // Host helper to broadcast data to all connected guests
   const broadcastToAll = useCallback((payload) => {
@@ -754,7 +1076,14 @@ export const QuizProvider = ({ children }) => {
       opponentName,
       setOpponentName,
       resetMultiplayer,
-      initHostParticipants
+      initHostParticipants,
+      createRoomInSupabase,
+      joinRoomInSupabase,
+      startContestInSupabase,
+      submitAnswerInSupabase,
+      trackParticipantProgress,
+      currentRoomCode,
+      clientServerOffset
     }}>
       {children}
     </QuizContext.Provider>

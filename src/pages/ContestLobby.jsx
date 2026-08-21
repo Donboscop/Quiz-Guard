@@ -34,7 +34,11 @@ export const ContestLobby = () => {
     startQuiz,
     startContest,
     resetMultiplayer,
-    initHostParticipants
+    initHostParticipants,
+    createRoomInSupabase,
+    joinRoomInSupabase,
+    startContestInSupabase,
+    currentRoomCode
   } = useQuiz();
 
   const [lobbyMode, setLobbyMode] = useState('select'); // 'select' | 'host' | 'join'
@@ -67,13 +71,13 @@ export const ContestLobby = () => {
   }, [isContestMode, sessionStatus, activeQuiz, navigate]);
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomCode);
+    navigator.clipboard.writeText(roomCode || currentRoomCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Host a room
-  const handleHostRoom = () => {
+  // Host a room (Supabase Managed BaaS)
+  const handleHostRoom = async () => {
     if (!playerName.trim()) {
       alert("Please enter your nickname first.");
       return;
@@ -81,29 +85,20 @@ export const ContestLobby = () => {
     setLoading(true);
     setLobbyError(null);
 
-    // Instantiate PeerJS client
-    // Generates a random alphanumeric ID
-    const newPeer = new Peer();
-
-    newPeer.on('open', (id) => {
-      setPeer(newPeer);
-      setRoomCode(id);
+    const selectedQuiz = quizzes.find(q => q.id === selectedQuizId);
+    const code = await createRoomInSupabase(selectedQuiz, selectedQuiz?.duration || 10, playerName);
+    if (code) {
+      setRoomCode(code);
       setLobbyMode('host');
       setLoading(false);
-      setIsContestMode(true);
-      setIsHost(true);
-      initHostParticipants(id, playerName);
-    });
-
-    newPeer.on('error', (err) => {
-      console.error(err);
-      setLobbyError("Failed to initialize WebRTC Peer network. Try refreshing.");
+    } else {
+      setLobbyError("Failed to initialize room. Try again.");
       setLoading(false);
-    });
+    }
   };
 
-  // Join a room
-  const handleJoinRoom = () => {
+  // Join a room (Supabase Atomic 50 Capacity Check)
+  const handleJoinRoom = async () => {
     if (!playerName.trim()) {
       alert("Please enter your nickname first.");
       return;
@@ -115,96 +110,22 @@ export const ContestLobby = () => {
     setLoading(true);
     setLobbyError(null);
 
-    // Guest instantiates their own Peer to connect to Host
-    const guestPeer = new Peer();
-
-    guestPeer.on('open', () => {
-      setPeer(guestPeer);
-      
-      const connection = guestPeer.connect(inputCode.trim(), { reliable: true });
-      
-      connection.on('open', () => {
-        setConn(connection);
-        setIsContestMode(true);
-        setIsHost(false);
-        setLobbyMode('join');
-        setLoading(false);
-
-        // Send nickname handshake to Host
-        connection.send({
-          type: 'HANDSHAKE',
-          name: playerName.trim()
-        });
-
-        // Backup retry send after 350ms to guarantee Host registers guest name
-        setTimeout(() => {
-          try {
-            if (connection.open) {
-              connection.send({
-                type: 'HANDSHAKE',
-                name: playerName.trim()
-              });
-            }
-          } catch(e){}
-        }, 350);
-      });
-
-      connection.on('error', (err) => {
-        console.error(err);
-        setLobbyError("Failed to connect to the Host. Verify the Lobby Code is correct.");
-        setLoading(false);
-        guestPeer.destroy();
-        resetMultiplayer();
-      });
-    });
-
-    guestPeer.on('error', (err) => {
-      console.error(err);
-      setLobbyError("Network error. Could not join room.");
+    const res = await joinRoomInSupabase(inputCode, playerName);
+    if (res && res.success) {
+      setRoomCode(res.roomCode);
+      setLobbyMode('join');
       setLoading(false);
-    });
+    } else {
+      setLobbyError(res?.error || "Failed to join room. Verify code or capacity limit.");
+      setLoading(false);
+    }
   };
 
-  // Handle handshakes and other control messages at the lobby level
-  useEffect(() => {
-    if (!conn) return;
-
-    const handleLobbyData = (data) => {
-      if (data.type === 'HANDSHAKE') {
-        // Host receives guest's nickname
-        setOpponentName(data.name);
-        // Host responds with their own nickname
-        conn.send({
-          type: 'HANDSHAKE_RESPONSE',
-          name: playerName.trim()
-        });
-      } else if (data.type === 'HANDSHAKE_RESPONSE') {
-        // Guest receives host's nickname
-        setOpponentName(data.name);
-      }
-    };
-
-    conn.on('data', handleLobbyData);
-    return () => {
-      conn.off('data', handleLobbyData);
-    };
-  }, [conn, playerName, setOpponentName]);
-
-  // Host starts the quiz
-  const handleStartContest = () => {
-    if (!conn) return;
+  // Host starts the quiz (Authoritative Server Start)
+  const handleStartContest = async () => {
     const selectedQuiz = quizzes.find(q => q.id === selectedQuizId);
     if (!selectedQuiz) return;
-
-    // 1. Broadcast START_CONTEST to Guest
-    conn.send({
-      type: 'START_CONTEST',
-      quiz: selectedQuiz,
-      hostName: playerName.trim()
-    });
-
-    // 2. Start Host's own quiz session
-    startQuiz(selectedQuiz);
+    await startContestInSupabase(roomCode || currentRoomCode, selectedQuiz);
   };
 
   return (

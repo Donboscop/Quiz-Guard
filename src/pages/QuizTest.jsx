@@ -31,8 +31,17 @@ export const QuizTest = () => {
     opponentProgress,
     participants,
     playerName,
-    isHost
+    isHost,
+    trackParticipantProgress,
+    submitAnswerInSupabase
   } = useQuiz();
+
+  // FIX 2: Report progress (question index ONLY, no scores) to Supabase Realtime
+  useEffect(() => {
+    if (isContestMode && trackParticipantProgress) {
+      trackParticipantProgress(currentQuestionIndex);
+    }
+  }, [isContestMode, currentQuestionIndex, trackParticipantProgress]);
 
   // If no active quiz loaded in context, reload from quizzes database
   useEffect(() => {

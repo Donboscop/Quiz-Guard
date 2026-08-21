@@ -4,8 +4,8 @@ import { useQuiz } from '../context/QuizContext';
 import { StatCard } from '../components/quiz/StatCard';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { formatTime, isQuestionCorrect, isQuestionAnswered } from '../utils/quizUtils';
-import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award } from 'lucide-react';
+import { formatTime, isQuestionCorrect, isQuestionAnswered, getOptionLetter, getCorrectAnswers, getUserAnswers } from '../utils/quizUtils';
+import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award, Lightbulb, HelpCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
 
@@ -280,58 +280,100 @@ export const Result = () => {
           animate={{ opacity: 1, y: 0 }}
           className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl"
         >
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
             <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-amber-400" />
-              <h3 className="font-display font-bold text-lg text-white">Per-Question Time Breakdown</h3>
+              <BookOpen className="w-5 h-5 text-brand-400" />
+              <h3 className="font-display font-bold text-lg text-white">Questions & Answers Breakdown</h3>
             </div>
-            <Badge variant="brand" size="sm">
-              Gap Limit: {formatTime(Math.max(10, Math.round(((latestResult?.duration || 10) * 60) / result.questions.length)))} / Quest
-            </Badge>
+            <span className="text-xs font-semibold text-slate-400">
+              Selected vs Correct Options & Explanations
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {result.questions.map((q, idx) => {
               const userChoice = result.answers?.[q.id];
               const isCorrect = isQuestionCorrect(q, userChoice);
               const isUnanswered = !isQuestionAnswered(q, userChoice);
               const timeSpentSec = result.questionTimes?.[q.id] || 0;
-              const allocatedGap = Math.max(10, Math.round(((latestResult?.duration || 10) * 60) / result.questions.length));
-              const fillPct = Math.min(100, Math.round((timeSpentSec / allocatedGap) * 100));
+              const userSelectedArr = getUserAnswers(userChoice);
+              const correctArr = getCorrectAnswers(q);
+
+              // Formatted user selected options text
+              const userText = isUnanswered
+                ? 'Not Answered (Skipped)'
+                : userSelectedArr.map(i => `${getOptionLetter(i)}: ${q.options[i] || ''}`).join(', ');
+
+              // Formatted correct options text
+              const correctText = correctArr.map(i => `${getOptionLetter(i)}: ${q.options[i] || ''}`).join(', ');
 
               return (
-                <div key={q.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono font-bold text-xs text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded border border-brand-500/20">
-                      Q{idx + 1}
+                <div key={q.id} className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-xs text-brand-400 bg-brand-500/10 px-2.5 py-0.5 rounded-md border border-brand-500/20">
+                      Question #{idx + 1}
                     </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                      isCorrect ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                      isUnanswered ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                      'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                    }`}>
-                      {isCorrect ? '✓ Correct' : isUnanswered ? '— Skipped' : '✕ Wrong'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        {formatTime(timeSpentSec)}
+                      </span>
+                      <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                        isCorrect ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
+                        isUnanswered ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
+                        'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+                      }`}>
+                        {isCorrect ? '✓ Correct' : isUnanswered ? '— Skipped' : '✕ Incorrect'}
+                      </span>
+                    </div>
                   </div>
 
-                  <p className="text-xs text-slate-300 line-clamp-1 font-medium">
+                  <h4 className="font-display font-semibold text-sm text-white">
                     {q.question}
-                  </p>
+                  </h4>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span>Time Spent: <strong className="text-white">{formatTime(timeSpentSec)}</strong></span>
-                      <span>Target Gap: {formatTime(allocatedGap)}</span>
+                  {/* Answers Comparison */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
+                    {/* User Selection */}
+                    <div className={`p-3 rounded-xl border ${
+                      isCorrect ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300' :
+                      isUnanswered ? 'bg-amber-950/20 border-amber-500/30 text-amber-300' :
+                      'bg-rose-950/40 border-rose-500/50 text-rose-200'
+                    }`}>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider block opacity-80 mb-0.5">
+                        Your Selected Answer:
+                      </span>
+                      <span className="font-bold flex items-center gap-1.5">
+                        {isCorrect ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" /> : isUnanswered ? <MinusCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" /> : <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
+                        {userText}
+                      </span>
                     </div>
-                    <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                      <div
-                        className={`h-full transition-all ${
-                          fillPct > 90 ? 'bg-rose-500' : fillPct > 70 ? 'bg-amber-400' : 'bg-emerald-400'
-                        }`}
-                        style={{ width: `${fillPct}%` }}
-                      />
+
+                    {/* Correct Solution */}
+                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-300">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider block text-emerald-400 mb-0.5">
+                        Correct Answer Solution:
+                      </span>
+                      <span className="font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                        {correctText}
+                      </span>
                     </div>
                   </div>
+
+                  {/* Explanation Box */}
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 flex items-start gap-2.5 text-xs">
+                    <Lightbulb className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold text-brand-300 uppercase tracking-wider block">
+                        Why this answer is correct:
+                      </span>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        {q.explanation || `The correct option is ${correctText}. Standard assessment rules apply to this question context.`}
+                      </p>
+                    </div>
+                  </div>
+
                 </div>
               );
             })}

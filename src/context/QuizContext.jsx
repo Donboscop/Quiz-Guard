@@ -103,6 +103,20 @@ export const QuizProvider = ({ children }) => {
     if (!peer) return;
 
     const handleConnection = (connection) => {
+      // Check maximum limit of 50 participants
+      if (connsRef.current.length >= 50) {
+        connection.on('open', () => {
+          try {
+            connection.send({
+              type: 'ROOM_ERROR',
+              message: 'Room is full! Maximum limit of 50 participants reached for this live contest.'
+            });
+          } catch(e){}
+          setTimeout(() => { try { connection.close(); } catch(e){} }, 500);
+        });
+        return;
+      }
+
       // Add connection to Host's list if not present
       if (!connsRef.current.some(c => c.peer === connection.peer)) {
         connsRef.current.push(connection);
@@ -122,6 +136,17 @@ export const QuizProvider = ({ children }) => {
           };
 
           setParticipants(prev => {
+            // Reject if 50 limit reached
+            if (prev.length >= 50) {
+              try {
+                connection.send({
+                  type: 'ROOM_ERROR',
+                  message: 'Room is full! Maximum limit of 50 participants reached.'
+                });
+              } catch(e){}
+              return prev;
+            }
+
             const hostEntry = {
               id: peer ? peer.id : 'host',
               name: playerName.trim() || 'Host',
@@ -236,6 +261,9 @@ export const QuizProvider = ({ children }) => {
         if (data.participants) {
           setParticipants(data.participants);
         }
+      } else if (data.type === 'ROOM_ERROR') {
+        alert(data.message || 'Room is full! Maximum limit of 50 participants reached.');
+        resetMultiplayer();
       }
     };
 

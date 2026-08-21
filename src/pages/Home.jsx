@@ -5,7 +5,7 @@ import { ShieldCheck, Sparkles, Clock, Eye, BarChart3, CheckCircle2, ArrowRight,
 import { Button } from '../components/common/Button';
 import { QuizCard } from '../components/quiz/QuizCard';
 import { getQuizzesList } from '../data/quizzes';
-import { Skiper40 } from '../components/ui/skiper-ui/skiper40';
+
 
 export const Home = () => {
   const featuredQuizzes = getQuizzesList().slice(0, 3);
@@ -77,15 +77,16 @@ export const Home = () => {
             className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4"
           >
             <Link to="/categories">
-              <Button size="lg" variant="primary" icon={Sparkles} className="w-full sm:w-auto">
-                Start a Quiz
+              <Button size="lg" variant="primary" icon={Play} className="w-full sm:w-auto">
+                Explore Quizzes
               </Button>
             </Link>
-            <a href="#skiper-animation">
-              <Button size="lg" variant="secondary" icon={Play} className="w-full sm:w-auto">
-                Try Skiper40 Animations
+
+            <Link to="/ai-generator">
+              <Button size="lg" variant="secondary" icon={Sparkles} className="w-full sm:w-auto border-brand-500/30 text-brand-300 hover:bg-brand-500/10 shadow-glow-sm">
+                Generate Quiz with AI ✨
               </Button>
-            </a>
+            </Link>
           </motion.div>
 
           {/* Live Trust Metrics */}
@@ -115,10 +116,7 @@ export const Home = () => {
         </div>
       </section>
 
-      {/* SKIPER40 ANIMATED LINKS SECTION */}
-      <section id="skiper-animation" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <Skiper40 />
-      </section>
+
 
       {/* FEATURE HIGHLIGHTS */}
       <section id="features" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

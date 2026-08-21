@@ -4,7 +4,7 @@ import { getQuizById } from '../data/quizzes';
 import { useQuiz } from '../context/QuizContext';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { ShieldAlert, Clock, HelpCircle, CheckSquare, ArrowRight, ArrowLeft, Eye, Lock } from 'lucide-react';
+import { ShieldAlert, Clock, HelpCircle, CheckSquare, ArrowRight, ArrowLeft, Eye, Lock, Users, Play, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const Instructions = () => {
@@ -31,6 +31,11 @@ export const Instructions = () => {
     if (!agreed) return;
     startQuiz(quiz);
     navigate(`/quiz/${quiz.id}/test`);
+  };
+
+  const handleStartLiveArea = () => {
+    if (!agreed) return;
+    navigate(`/contest?quizId=${quiz.id}`);
   };
 
   return (
@@ -146,17 +151,70 @@ export const Instructions = () => {
           </label>
         </div>
 
-        {/* Action Button */}
-        <div className="flex justify-end pt-2">
-          <Button
-            size="lg"
-            variant="primary"
-            disabled={!agreed}
-            onClick={handleStartTest}
-            icon={ArrowRight}
-          >
-            Start Test Now
-          </Button>
+        {/* Mode Selection & Action Buttons */}
+        <div className="pt-4 border-t border-slate-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Choose Test Mode to Proceed:
+            </span>
+            {!agreed && (
+              <span className="text-[11px] text-amber-400 font-medium animate-pulse">
+                * Please accept the guidelines above to unlock options
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Solo Test Button */}
+            <button
+              type="button"
+              disabled={!agreed}
+              onClick={handleStartTest}
+              className={`p-4 rounded-2xl border text-left transition-all flex items-center justify-between group ${
+                agreed
+                  ? 'bg-brand-500/10 hover:bg-brand-500/20 border-brand-500/40 hover:border-brand-500 text-white cursor-pointer shadow-lg shadow-brand-500/10'
+                  : 'bg-slate-950/40 border-slate-800/80 text-slate-600 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 ${agreed ? 'bg-brand-500 text-white' : 'bg-slate-800 text-slate-600'}`}>
+                  <Play className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-sm text-white">Start Test Now</h4>
+                  <p className="text-[11px] text-slate-400">Solo proctored assessment attempt</p>
+                </div>
+              </div>
+              <ArrowRight className={`w-5 h-5 transition-transform group-hover:translate-x-1 ${agreed ? 'text-brand-400' : 'text-slate-600'}`} />
+            </button>
+
+            {/* Live Area Option Button */}
+            <button
+              type="button"
+              disabled={!agreed}
+              onClick={handleStartLiveArea}
+              className={`p-4 rounded-2xl border text-left transition-all flex items-center justify-between group ${
+                agreed
+                  ? 'bg-indigo-500/10 hover:bg-indigo-500/20 border-indigo-500/40 hover:border-indigo-400 text-white cursor-pointer shadow-lg shadow-indigo-500/10'
+                  : 'bg-slate-950/40 border-slate-800/80 text-slate-600 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative transition-transform group-hover:scale-105 ${agreed ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-slate-800 text-slate-600'}`}>
+                  <Users className="w-5 h-5" />
+                  {agreed && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-display font-bold text-sm text-white">Live Area Option</h4>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 uppercase">LIVE</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Host/Join real-time P2P duel arena</p>
+                </div>
+              </div>
+              <ArrowRight className={`w-5 h-5 transition-transform group-hover:translate-x-1 ${agreed ? 'text-indigo-400' : 'text-slate-600'}`} />
+            </button>
+          </div>
         </div>
 
       </motion.div>

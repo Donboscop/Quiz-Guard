@@ -3,9 +3,10 @@ import { useNavigate, Link, useParams } from 'react-router-dom';
 import { CATEGORIES, getQuizById, saveCustomQuiz, deleteCustomQuiz } from '../data/quizzes';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3, CheckSquare } from 'lucide-react';
+import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3, CheckSquare, Cpu } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOptionLetter } from '../utils/quizUtils';
+import { generateAiQuiz } from '../utils/aiQuizGenerator';
 
 export const CreateQuiz = () => {
   const navigate = useNavigate();
@@ -13,13 +14,20 @@ export const CreateQuiz = () => {
 
   const isEditing = Boolean(id && id !== 'new');
 
-  // Creation mode state: 'manual' | 'json'
+  // Creation mode state: 'manual' | 'json' | 'ai'
   const [creationMode, setCreationMode] = useState('manual');
   
   // JSON console state
   const [jsonText, setJsonText] = useState('');
   const [jsonError, setJsonError] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // AI Generator inline state
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiDifficulty, setAiDifficulty] = useState('Medium');
+  const [aiCount, setAiCount] = useState(5);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
 
   // General quiz metadata state (manual mode)
   const [title, setTitle] = useState('');
@@ -390,6 +398,45 @@ export const CreateQuiz = () => {
     }
   };
 
+  // AI Inline generation handler
+  const handleAiGenerateInline = async (e) => {
+    if (e) e.preventDefault();
+    if (!aiTopic.trim()) {
+      alert("Please enter a topic for AI Quiz generation.");
+      return;
+    }
+
+    setAiGenerating(true);
+    setAiMessage("Synthesizing questions...");
+
+    try {
+      const generated = await generateAiQuiz({
+        topic: aiTopic.trim(),
+        difficulty: aiDifficulty,
+        questionCount: Number(aiCount),
+        onProgress: (p) => setAiMessage(p.message)
+      });
+
+      if (generated) {
+        setTitle(generated.title);
+        setDescription(generated.description);
+        setCategoryId(generated.categoryId || 'cs');
+        setDifficulty(generated.difficulty || 'Medium');
+        setDuration(generated.duration || 10);
+        if (Array.isArray(generated.questions) && generated.questions.length > 0) {
+          setQuestions(generated.questions);
+        }
+        setCreationMode('manual');
+        alert(`✨ AI Quiz generated successfully for "${aiTopic}"! You can now fine-tune the questions below.`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate AI quiz. Please try again.");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   // Validate manual form and submit
   const handleManualSubmit = (e) => {
     e.preventDefault();
@@ -515,7 +562,7 @@ export const CreateQuiz = () => {
 
 
       {/* TOGGLE SELECTOR MODE */}
-      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800/80 max-w-md">
+      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800/80 max-w-lg">
         <button
           type="button"
           onClick={() => setCreationMode('manual')}
@@ -530,6 +577,18 @@ export const CreateQuiz = () => {
         </button>
         <button
           type="button"
+          onClick={() => setCreationMode('ai')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-bold transition-all focus:outline-none ${
+            creationMode === 'ai'
+              ? 'bg-brand-600 text-white shadow-glow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+          AI Generator
+        </button>
+        <button
+          type="button"
           onClick={() => setCreationMode('json')}
           className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-bold transition-all focus:outline-none ${
             creationMode === 'json'
@@ -538,9 +597,88 @@ export const CreateQuiz = () => {
           }`}
         >
           <Code className="w-4 h-4" />
-          JSON Console Import
+          JSON Console
         </button>
       </div>
+
+      {/* MODE AI GENERATOR INLINE */}
+      {creationMode === 'ai' && (
+        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-brand-500/30 space-y-6 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 blur-3xl rounded-full pointer-events-none" />
+          
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-2xl bg-brand-500/20 text-brand-300 border border-brand-500/30">
+              <Sparkles className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="font-display font-bold text-xl text-white">Generate Quiz with AI</h3>
+              <p className="text-xs text-slate-400">Type any topic or concept to generate questions directly into the form builder.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Topic or Concept</label>
+              <input
+                type="text"
+                placeholder="e.g. Docker Containers, TypeScript Generics, Quantum Physics..."
+                value={aiTopic}
+                onChange={(e) => setAiTopic(e.target.value)}
+                className="w-full px-4 py-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-brand-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Questions Count</label>
+                <select
+                  value={aiCount}
+                  onChange={(e) => setAiCount(Number(e.target.value))}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-semibold focus:outline-none"
+                >
+                  <option value={3}>3 Questions</option>
+                  <option value={5}>5 Questions</option>
+                  <option value={10}>10 Questions</option>
+                  <option value={15}>15 Questions</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Target Difficulty</label>
+                <select
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-semibold focus:outline-none"
+                >
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                  <option value="Expert">Expert</option>
+                </select>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              onClick={handleAiGenerateInline}
+              disabled={aiGenerating || !aiTopic.trim()}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold text-sm shadow-glow-md flex items-center justify-center gap-2"
+            >
+              {aiGenerating ? (
+                <>
+                  <Cpu className="w-4 h-4 animate-spin text-brand-300" />
+                  <span>{aiMessage || 'Generating questions...'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                  <span>Generate Questions & Load into Editor</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* MODE 1: MANUAL BUILDER FORM */}
       {creationMode === 'manual' && (

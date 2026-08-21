@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getQuizzesList } from '../data/quizzes';
 import { useQuiz } from '../context/QuizContext';
 import { getContestLeaderboard } from '../utils/storage';
@@ -12,7 +12,11 @@ import { motion } from 'framer-motion';
 
 export const ContestLobby = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const quizIdParam = searchParams.get('quizId');
   const quizzes = getQuizzesList();
+  
+  const initialQuizId = quizzes.find(q => q.id === quizIdParam)?.id || quizzes[0]?.id || '';
   
   const {
     peer,
@@ -31,12 +35,20 @@ export const ContestLobby = () => {
   } = useQuiz();
 
   const [lobbyMode, setLobbyMode] = useState('select'); // 'select' | 'host' | 'join'
-  const [selectedQuizId, setSelectedQuizId] = useState(quizzes[0]?.id || '');
+  const [selectedQuizId, setSelectedQuizId] = useState(initialQuizId);
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lobbyError, setLobbyError] = useState(null);
+
+  // Sync preselected quizId if searchParam changes
+  useEffect(() => {
+    if (quizIdParam) {
+      const match = quizzes.find(q => q.id === quizIdParam);
+      if (match) setSelectedQuizId(match.id);
+    }
+  }, [quizIdParam]);
 
   // Clean up any old multiplayer connections when loading the lobby
   useEffect(() => {

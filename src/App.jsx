@@ -19,6 +19,7 @@ import { About } from './pages/About';
 import { NotFound } from './pages/NotFound';
 import { CreateQuiz } from './pages/CreateQuiz';
 import { ContestLobby } from './pages/ContestLobby';
+import { AiQuizGenerator } from './pages/AiQuizGenerator';
 
 // Helper component for Lenis smooth scroll & scroll-to-top on route change
 function ScrollAndLenisManager() {
@@ -82,6 +83,8 @@ export function App() {
                 <Route path="/edit/:id" element={<CreateQuiz />} />
                 <Route path="/quiz/:id/edit" element={<CreateQuiz />} />
                 <Route path="/quiz/edit/:id" element={<CreateQuiz />} />
+                <Route path="/ai-generator" element={<AiQuizGenerator />} />
+                <Route path="/quiz/ai-generator" element={<AiQuizGenerator />} />
                 <Route path="/contest" element={<ContestLobby />} />
 
                 <Route path="*" element={<NotFound />} />

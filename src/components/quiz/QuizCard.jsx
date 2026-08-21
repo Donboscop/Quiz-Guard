@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
-import { Clock, HelpCircle, ArrowRight, Code2, Atom, Palette, Globe2, BrainCircuit, Cloud, Cpu, Edit3, Trash2 } from 'lucide-react';
+import { Clock, HelpCircle, ArrowRight, Code2, Atom, Palette, Globe2, BrainCircuit, Cloud, Cpu, Edit3, Trash2, Users } from 'lucide-react';
 import { deleteCustomQuiz } from '../../data/quizzes';
 
 const categoryIcons = {
@@ -101,6 +101,17 @@ export const QuizCard = ({ quiz, onDelete }) => {
           >
             <span>Start Test</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Button>
+        </Link>
+        <Link to={`/contest?quizId=${quiz.id}`}>
+          <Button
+            variant="secondary"
+            size="md"
+            title="Live Area / Contest Mode"
+            className="px-3 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20 hover:text-indigo-300 relative group/live"
+          >
+            <Users className="w-4 h-4" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse border border-slate-900" />
           </Button>
         </Link>
         <Link to={`/edit/${quiz.id}`}>

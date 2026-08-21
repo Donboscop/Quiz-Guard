@@ -20,6 +20,7 @@ export const Navbar = () => {
   const navLinks = [
     { path: '/', label: 'Home', icon: ShieldCheck },
     { path: '/categories', label: 'Categories', icon: BookOpen },
+    { path: '/ai-generator', label: 'AI Quiz', icon: Sparkles },
     { path: '/edit/new', label: 'Create Quiz', icon: PlusCircle },
     { path: '/contest', label: 'Live Arena', icon: Users },
     { path: '/history', label: 'Attempt History', icon: History, badge: attempts.length },

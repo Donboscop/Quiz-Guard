@@ -269,12 +269,34 @@ export const QuizProvider = ({ children }) => {
   const setPeer = (p) => setPeerState(p);
   const setConn = (c) => setConnState(c);
 
+  // WebRTC Heartbeat: Keep mobile browser WebRTC data channels 100% active
+  useEffect(() => {
+    if (!isHost) return;
+    const heartbeatInterval = setInterval(() => {
+      connsMapRef.current.forEach((c) => {
+        try {
+          if (c && c.open) {
+            c.send({ type: 'PING' });
+          }
+        } catch(e){}
+      });
+    }, 2000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [isHost]);
+
   // Guest-side: Listen for messages from Host connection
   useEffect(() => {
     if (!conn || isHost) return;
 
     const handleData = (data) => {
-      if (data.type === 'LOBBY_STATE') {
+      if (data.type === 'PING') {
+        try {
+          if (conn && conn.open) {
+            conn.send({ type: 'PONG' });
+          }
+        } catch(e){}
+      } else if (data.type === 'LOBBY_STATE') {
         setParticipants(data.participants || []);
         if (data.hostName) setOpponentName(data.hostName);
       } else if (data.type === 'START_CONTEST') {
@@ -311,7 +333,7 @@ export const QuizProvider = ({ children }) => {
     return () => {
       conn.off('data', handleData);
     };
-  }, [conn, isHost]);
+  }, [conn, isHost, resetMultiplayer]);
 
   // Host starts contest for ALL connected participants
   const startContest = useCallback((quiz) => {
@@ -347,27 +369,23 @@ export const QuizProvider = ({ children }) => {
       participants: initialParticipants
     };
 
-    // Immediate broadcast to all open connections
-    connsMapRef.current.forEach((c, peerId) => {
-      try {
-        if (c && c.open) {
-          c.send(startPayload);
-        }
-      } catch(e) {
-        console.error(`Start contest send error for ${peerId}:`, e);
-      }
-    });
-
-    // Backup retry send after 300ms to guarantee delivery to all participants
-    setTimeout(() => {
-      connsMapRef.current.forEach((c) => {
+    const sendStartToAll = () => {
+      connsMapRef.current.forEach((c, peerId) => {
         try {
           if (c && c.open) {
             c.send(startPayload);
           }
-        } catch(e){}
+        } catch(e) {
+          console.error(`Start contest send error for ${peerId}:`, e);
+        }
       });
-    }, 300);
+    };
+
+    // Multi-pulse start signal (0ms, 300ms, 800ms, 1500ms) to ensure mobile devices receive start event
+    sendStartToAll();
+    setTimeout(sendStartToAll, 300);
+    setTimeout(sendStartToAll, 800);
+    setTimeout(sendStartToAll, 1500);
 
     // Start local quiz session for Host
     setActiveQuiz(quiz);
@@ -435,6 +453,25 @@ export const QuizProvider = ({ children }) => {
       }
     }
   }, [currentQuestionIndex, userAnswers, isContestMode, conn, sessionStatus, activeQuiz, timeRemaining, isHost, peer, playerName]);
+
+  // Issue focus warning (tab switch, etc.)
+  const issueFocusWarning = useCallback((title, message) => {
+    setFocusWarnings(prev => {
+      const nextCount = prev + 1;
+      // Allow 2 focus warnings before termination on 3rd violation
+      if (nextCount >= 3) {
+        terminateQuiz("Multiple focus violations detected (tab switching / window defocus).");
+      } else {
+        setWarningModal({
+          isOpen: true,
+          title: title || "Focus Warning Issued",
+          message: message || `Warning ${nextCount}/2: You have moved away from active test window. Repeated violations will terminate your attempt.`,
+          type: "warning"
+        });
+      }
+      return nextCount;
+    });
+  }, [terminateQuiz]);
 
   // Restore session from localStorage on mount if valid
   useEffect(() => {
@@ -668,25 +705,6 @@ export const QuizProvider = ({ children }) => {
 
     return savedRecord;
   }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
-
-  // Issue focus warning (tab switch, etc.)
-  const issueFocusWarning = useCallback((title, message) => {
-    setFocusWarnings(prev => {
-      const nextCount = prev + 1;
-      // If repeat warning (e.g. 2nd tab switch), trigger immediate termination!
-      if (nextCount >= 2) {
-        terminateQuiz("Multiple focus violations detected (tab switching / window defocus).");
-      } else {
-        setWarningModal({
-          isOpen: true,
-          title: title || "Focus Warning Issued",
-          message: message || "You have moved away from the active test window. Repeated actions will terminate your attempt.",
-          type: "warning"
-        });
-      }
-      return nextCount;
-    });
-  }, [terminateQuiz]);
 
   const closeWarningModal = useCallback(() => {
     setWarningModal(prev => ({ ...prev, isOpen: false }));

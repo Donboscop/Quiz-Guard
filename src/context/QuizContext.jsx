@@ -115,7 +115,7 @@ export const QuizProvider = ({ children }) => {
     setAuthoritativeEndAt(null);
   }, [conn, peer]);
 
-  // FIX 1 & 4 & 5: Supabase Atomic Room Creation & Joining (50 max capacity)
+  // FIX 1, 4 & 5: Supabase Atomic Room Creation & Joining (50 max capacity)
   const createRoomInSupabase = useCallback(async (quiz, duration, hostName) => {
     if (!quiz || !hostName.trim()) return null;
     const roomCode = 'QG-' + Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -134,17 +134,17 @@ export const QuizProvider = ({ children }) => {
       }]).select().single();
 
       if (roomErr) {
-        console.warn("Supabase room create fallback:", roomErr);
+        console.warn("Supabase room create error:", roomErr);
       }
 
       // 2. Add Host to Participants Table
-      const { data: hostParticipant } = await supabase.from('participants').insert([{
+      await supabase.from('participants').insert([{
         room_id: roomCode,
         participant_id: hostId,
         name: hostName.trim(),
         is_host: true,
         status: 'in-lobby'
-      }]).select().single();
+      }]);
 
       // Set local state
       setCurrentRoomCode(roomCode);
@@ -158,8 +158,7 @@ export const QuizProvider = ({ children }) => {
         name: hostName.trim(),
         isHost: true,
         status: 'in-lobby',
-        currentQuestionIndex: 0,
-        score: 0
+        currentQuestionIndex: 0
       };
       setParticipants([hostEntry]);
 
@@ -187,10 +186,10 @@ export const QuizProvider = ({ children }) => {
       });
 
       if (!rpcErr && rpcRes && rpcRes.success === false) {
-        return { success: false, error: rpcRes.error || 'Room is full (Maximum limit of 50 participants reached)' };
+        return { success: false, error: rpcRes.error || 'Room is full! Maximum limit of 50 participants reached.' };
       }
 
-      // Fallback manual query if RPC not deployed yet
+      // Fallback query if room is already active
       const { data: room, error: roomErr } = await supabase.from('rooms').select('*').eq('id', cleanCode).single();
       if (roomErr || !room) {
         return { success: false, error: 'Room not found. Verify the Room Code.' };
@@ -346,8 +345,7 @@ export const QuizProvider = ({ children }) => {
               name: u.name,
               isHost: u.isHost,
               status: 'in-lobby',
-              currentQuestionIndex: u.questionIndex || 0,
-              score: 0
+              currentQuestionIndex: u.questionIndex || 0
             });
           });
           return Array.from(map.values());

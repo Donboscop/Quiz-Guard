@@ -14,7 +14,7 @@ export const QuestionCard = ({
   onPrev,
   onSubmit
 }) => {
-  const { userAnswers, selectOption, activeQuiz, questionTimes } = useQuiz();
+  const { userAnswers, selectOption, activeQuiz, questionTimes, submitAnswerInSupabase } = useQuiz();
   const rawAnswer = userAnswers[question.id];
   const isMultiple = isMultiAnswerQuestion(question);
   const selectedArr = getUserAnswers(rawAnswer);
@@ -23,6 +23,16 @@ export const QuestionCard = ({
   const allocatedGap = getQuestionTimelineGap(activeQuiz);
   const secondsSpentOnCurrentQ = questionTimes[question.id] || 0;
   const gapProgress = Math.min(100, Math.round((secondsSpentOnCurrentQ / allocatedGap) * 100));
+
+  const handleOptionSelect = (selectedIdx) => {
+    selectOption(question.id, selectedIdx, isMultiple);
+    if (submitAnswerInSupabase) {
+      const newAnswer = isMultiple
+        ? (selectedArr.includes(selectedIdx) ? selectedArr.filter(i => i !== selectedIdx) : [...selectedArr, selectedIdx].sort())
+        : selectedIdx;
+      submitAnswerInSupabase(question.id, newAnswer);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -83,7 +93,7 @@ export const QuestionCard = ({
                 optionText={option}
                 isMultiple={isMultiple}
                 isSelected={isMultiple ? selectedArr.includes(idx) : selectedOption === idx}
-                onSelect={(selectedIdx) => selectOption(question.id, selectedIdx, isMultiple)}
+                onSelect={handleOptionSelect}
               />
             ))}
           </div>

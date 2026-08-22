@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. TABLES
 
--- ROOMS TABLE
+-- ROOMS TABLE (Authoritative Contest State)
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY, -- Room Code (e.g. QG-8F29K)
   quiz_id TEXT NOT NULL,
@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_results_room_id ON results(room_id);
 -- 3. SERVER-AUTHORITATIVE RPC FUNCTIONS
 -- ====================================================================
 
--- GET SERVER TIME (True Server Clock Offset)
+-- FIX 1: GET SERVER TIME (True Server Clock Offset)
 CREATE OR REPLACE FUNCTION get_server_time()
 RETURNS TIMESTAMPTZ
 LANGUAGE sql
@@ -105,7 +105,7 @@ AS $$
   SELECT NOW();
 $$;
 
--- ATOMIC 50-PLAYER CAPACITY JOIN RPC
+-- FIX 5: ATOMIC 50-PLAYER CAPACITY JOIN RPC
 CREATE OR REPLACE FUNCTION join_room_atomic(
   p_room_code TEXT,
   p_participant_id TEXT,
@@ -127,8 +127,8 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Room not found');
   END IF;
 
-  IF v_room.status != 'lobby' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Contest has already started or ended');
+  IF v_room.status != 'lobby' AND v_room.status != 'running' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Contest has already ended');
   END IF;
 
   -- Count active room participants atomically
@@ -143,7 +143,7 @@ BEGIN
 
   -- Upsert participant record
   INSERT INTO participants (room_id, participant_id, name, is_host, status)
-  VALUES (p_room_code, p_participant_id, p_name, FALSE, 'in-lobby')
+  VALUES (p_room_code, p_participant_id, p_name, FALSE, CASE WHEN v_room.status = 'running' THEN 'solving' ELSE 'in-lobby' END)
   ON CONFLICT (room_id, participant_id) 
   DO UPDATE SET name = p_name, updated_at = NOW()
   RETURNING * INTO v_participant;
@@ -172,7 +172,7 @@ BEGIN
 END;
 $$;
 
--- ATOMIC AUTHORITATIVE START CONTEST RPC
+-- FIX 1 & 6: ATOMIC AUTHORITATIVE START CONTEST RPC
 CREATE OR REPLACE FUNCTION start_room_contest_authoritative(
   p_room_id TEXT,
   p_host_id TEXT
@@ -227,7 +227,7 @@ BEGIN
 END;
 $$;
 
--- SECURE SERVER-SIDE ANSWER SUBMISSION RPC
+-- FIX 3 & 7: SECURE SERVER-SIDE ANSWER SUBMISSION RPC
 CREATE OR REPLACE FUNCTION submit_answer_secure(
   p_room_id TEXT,
   p_participant_id TEXT,
@@ -292,7 +292,7 @@ BEGIN
 END;
 $$;
 
--- UPDATE PARTICIPANT PROGRESS RPC (Client reports index only, NO score)
+-- FIX 2: UPDATE PARTICIPANT PROGRESS RPC (Client reports index only, NO score)
 CREATE OR REPLACE FUNCTION update_participant_progress(
   p_room_id TEXT,
   p_participant_id TEXT,
@@ -364,14 +364,13 @@ ALTER TABLE proctor_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quiz_answer_keys ENABLE ROW LEVEL SECURITY;
 
--- Allow public reads on active rooms & participants
+-- Allow public reads on active rooms, participants & results
 CREATE POLICY "Allow public select on rooms" ON rooms FOR SELECT USING (true);
 CREATE POLICY "Allow public select on participants" ON participants FOR SELECT USING (true);
 CREATE POLICY "Allow public select on results" ON results FOR SELECT USING (true);
 
 -- Allow participants to read their own submissions
-CREATE POLICY "Allow participant read own submissions" ON submissions FOR SELECT 
-USING (true);
+CREATE POLICY "Allow participant read own submissions" ON submissions FOR SELECT USING (true);
 
 -- Deny normal SELECT reads on quiz_answer_keys to protect answer keys
 CREATE POLICY "Deny public select on answer keys" ON quiz_answer_keys FOR SELECT USING (false);

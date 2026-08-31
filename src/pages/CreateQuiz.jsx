@@ -1,757 +1,791 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useParams } from 'react-router-dom';
-import { CATEGORIES, getQuizById, saveCustomQuiz, deleteCustomQuiz } from '../data/quizzes';
+import { CATEGORIES, getQuizById, saveCustomQuiz } from '../data/quizzes';
+import { normalizeQuiz, validateQuizSchema } from '../utils/quizNormalizer';
+import { parsePptxFile, parsePdfFile, parseRawText } from '../utils/documentParsers';
+import { generateAiQuiz, generateQuizFromPptx, generateQuizFromPdf, generateQuizFromText } from '../utils/aiQuizGenerator';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
-import { PlusCircle, Trash2, Save, ArrowLeft, AlertCircle, HelpCircle, Check, Sparkles, Code, FileText, Copy, CheckCheck, Edit3, CheckSquare, Cpu } from 'lucide-react';
+import { 
+  Sparkles, FileText, Upload, PlusCircle, Trash2, Copy, Save, ArrowLeft, ArrowRight,
+  AlertCircle, CheckCircle2, RefreshCw, FileUp, HelpCircle, Code, Eye, Layers, BookOpen,
+  Check, MoveUp, MoveDown, Edit3, Shield, Users, Play
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getOptionLetter } from '../utils/quizUtils';
-import { generateAiQuiz } from '../utils/aiQuizGenerator';
 
 export const CreateQuiz = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-
   const isEditing = Boolean(id && id !== 'new');
 
-  // Creation mode state: 'manual' | 'json' | 'ai'
+  const pptxInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+  const jsonInputRef = useRef(null);
+
+  // Stages: 'select-mode' | 'input' | 'review' | 'published'
+  const [stage, setStage] = useState(isEditing ? 'review' : 'select-mode');
+  // Creation modes: 'manual' | 'ai' | 'pptx' | 'pdf' | 'text' | 'json'
   const [creationMode, setCreationMode] = useState('manual');
-  
-  // JSON console state
-  const [jsonText, setJsonText] = useState('');
-  const [jsonError, setJsonError] = useState(null);
-  const [copied, setCopied] = useState(false);
 
-  // AI Generator inline state
-  const [aiTopic, setAiTopic] = useState('');
-  const [aiDifficulty, setAiDifficulty] = useState('Medium');
-  const [aiCount, setAiCount] = useState(5);
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiMessage, setAiMessage] = useState('');
+  // Loading & error states
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
 
-  // General quiz metadata state (manual mode)
+  // Common Quiz metadata
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [categoryId, setCategoryId] = useState(CATEGORIES[0]?.id || 'js');
+  const [categoryId, setCategoryId] = useState('cs');
   const [difficulty, setDifficulty] = useState('Medium');
-  const [duration, setDuration] = useState(10); // in minutes
-  const [timePerQuestion, setTimePerQuestion] = useState(60); // in seconds per question timeline gap
+  const [duration, setDuration] = useState(10); // minutes
+  const [timePerQuestion, setTimePerQuestion] = useState(60); // seconds
+  const [questionCount, setQuestionCount] = useState(5);
+  const [language, setLanguage] = useState('English');
 
-  // Questions list state (manual mode)
+  // Mode 2: AI Topic
+  const [aiTopic, setAiTopic] = useState('');
+
+  // Mode 3: PPTX File
+  const [pptxFile, setPptxFile] = useState(null);
+  const [parsedPptx, setParsedPptx] = useState(null);
+
+  // Mode 4: PDF File
+  const [pdfFile, setPdfFile] = useState(null);
+  const [parsedPdf, setParsedPdf] = useState(null);
+
+  // Mode 5: Pasted Text
+  const [rawText, setRawText] = useState('');
+
+  // Mode 6: JSON
+  const [jsonText, setJsonText] = useState('');
+
+  // Normalized Questions Array for the Unified Review/Editor Stage
   const [questions, setQuestions] = useState([
     {
       id: Date.now(),
       question: '',
-      options: ['', ''], // Starts with 2 options
-      answer: 0, // Index of correct answer
-      explanation: ''
+      options: ['', '', '', ''],
+      answer: 0,
+      explanation: '',
+      codeSnippet: ''
     }
   ]);
-  
-  const [errors, setErrors] = useState({});
 
-  // Effect to load existing quiz data when in editing mode
+  // Editing Question Index in Review stage (for modal/inline editing)
+  const [activeEditingIndex, setActiveEditingIndex] = useState(null);
+  const [publishedQuizId, setPublishedQuizId] = useState(null);
+
+  // Load existing quiz if editing
   useEffect(() => {
     if (isEditing) {
       const existingQuiz = getQuizById(id);
       if (existingQuiz) {
         setTitle(existingQuiz.title || '');
         setDescription(existingQuiz.description || '');
-        setCategoryId(existingQuiz.categoryId || CATEGORIES[0].id);
+        setCategoryId(existingQuiz.categoryId || 'cs');
         setDifficulty(existingQuiz.difficulty || 'Medium');
         setDuration(existingQuiz.duration || 10);
         setTimePerQuestion(existingQuiz.timePerQuestion || 60);
         if (Array.isArray(existingQuiz.questions) && existingQuiz.questions.length > 0) {
           setQuestions(existingQuiz.questions);
         }
-        // Set jsonText prefilled
-        const templateObj = {
-          title: existingQuiz.title,
-          description: existingQuiz.description,
-          categoryId: existingQuiz.categoryId,
-          difficulty: existingQuiz.difficulty,
-          duration: existingQuiz.duration,
-          timePerQuestion: existingQuiz.timePerQuestion || 60,
-          questions: existingQuiz.questions
-        };
-        setJsonText(JSON.stringify(templateObj, null, 2));
+        setStage('review');
       }
     }
   }, [id, isEditing]);
 
-  const sampleJsonTemplate = `{
-  "title": "Node.js Event Loop Masterclass",
-  "description": "Test your knowledge of the event loop phases, microtasks, timers, and process.nextTick().",
-  "categoryId": "cs",
-  "difficulty": "Hard",
-  "duration": 15,
-  "timePerQuestion": 60,
-  "questions": [
-    {
-      "question": "Which phase of the Node.js event loop executes callbacks scheduled by setTimeout()?",
-      "options": [
-        "Timers Phase",
-        "Pending Callbacks Phase",
-        "Poll Phase",
-        "Check Phase"
-      ],
-      "answer": 0,
-      "explanation": "The Timers phase executes callbacks scheduled by setTimeout() and setInterval()."
+  // Mode Selection handler
+  const handleSelectMode = (mode) => {
+    setCreationMode(mode);
+    setErrorMessage(null);
+    setValidationErrors([]);
+    if (mode === 'manual') {
+      setStage('review');
+    } else {
+      setStage('input');
     }
-  ]
-}`;
-
-  const handleCopyTemplate = () => {
-    navigator.clipboard.writeText(sampleJsonTemplate);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
-  // Add a new blank question
-  const handleAddQuestion = () => {
-    setQuestions([
-      ...questions,
-      {
-        id: Date.now() + Math.random(),
-        question: '',
-        options: ['', ''],
-        answer: 0,
-        explanation: ''
+  // PPTX File Upload Handler
+  const handlePptxUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessing(true);
+    setProcessingMessage('Extracting slides and speaker notes from presentation...');
+    setErrorMessage(null);
+
+    try {
+      const parsed = await parsePptxFile(file);
+      setPptxFile(file);
+      setParsedPptx(parsed);
+      setTitle(parsed.title || 'PowerPoint Presentation Assessment');
+      setIsProcessing(false);
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to parse PowerPoint file');
+      setIsProcessing(false);
+    }
+  };
+
+  // PDF File Upload Handler
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessing(true);
+    setProcessingMessage('Extracting text and structure from PDF pages...');
+    setErrorMessage(null);
+
+    try {
+      const parsed = await parsePdfFile(file);
+      setPdfFile(file);
+      setParsedPdf(parsed);
+      setTitle(parsed.title || 'PDF Document Assessment');
+      setIsProcessing(false);
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to parse PDF file');
+      setIsProcessing(false);
+    }
+  };
+
+  // JSON File Upload Handler
+  const handleJsonUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setJsonText(event.target?.result || '');
+    };
+    reader.readAsText(file);
+  };
+
+  // Trigger Generator / Importer -> Move to Review Stage
+  const handleGenerateOrImport = async () => {
+    setIsProcessing(true);
+    setErrorMessage(null);
+    setValidationErrors([]);
+
+    try {
+      let normalized = null;
+
+      if (creationMode === 'ai') {
+        if (!aiTopic.trim()) throw new Error('Please enter a quiz topic or subject.');
+        setProcessingMessage(`Generating verified ${difficulty} questions for "${aiTopic}"...`);
+        normalized = await generateAiQuiz(aiTopic, difficulty, questionCount, language);
+      } else if (creationMode === 'pptx') {
+        if (!parsedPptx) throw new Error('Please upload a valid .pptx presentation first.');
+        setProcessingMessage(`Formulating questions from ${parsedPptx.totalSlides} presentation slides...`);
+        normalized = await generateQuizFromPptx(parsedPptx, { questionCount, difficulty, language });
+      } else if (creationMode === 'pdf') {
+        if (!parsedPdf) throw new Error('Please upload a valid .pdf document first.');
+        setProcessingMessage(`Formulating questions from ${parsedPdf.totalPages} document pages...`);
+        normalized = await generateQuizFromPdf(parsedPdf, { questionCount, difficulty, language });
+      } else if (creationMode === 'text') {
+        if (!rawText.trim()) throw new Error('Please paste your study notes or textbook content.');
+        setProcessingMessage('Analyzing text and synthesizing assessment questions...');
+        const parsed = parseRawText(rawText, title);
+        normalized = await generateQuizFromText(parsed, { questionCount, difficulty, language });
+      } else if (creationMode === 'json') {
+        if (!jsonText.trim()) throw new Error('Please paste or upload a JSON object.');
+        let parsedJson;
+        try {
+          parsedJson = JSON.parse(jsonText);
+        } catch (e) {
+          throw new Error('Invalid JSON syntax. Please check for missing commas or quotes.');
+        }
+
+        const val = validateQuizSchema(parsedJson);
+        if (!val.isValid) {
+          setValidationErrors(val.errors);
+          throw new Error('JSON structure validation failed.');
+        }
+
+        normalized = normalizeQuiz(parsedJson, { sourceType: 'json' });
       }
+
+      if (normalized) {
+        setTitle(normalized.title);
+        setDescription(normalized.description);
+        setCategoryId(normalized.categoryId);
+        setDifficulty(normalized.difficulty);
+        setDuration(normalized.duration);
+        setTimePerQuestion(normalized.timePerQuestion || 60);
+        setQuestions(normalized.questions);
+        setStage('review');
+      }
+    } catch (err) {
+      setErrorMessage(err.message || 'An error occurred during generation.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Question CRUD in Review stage
+  const handleUpdateQuestion = (idx, updated) => {
+    setQuestions(prev => prev.map((q, i) => i === idx ? { ...q, ...updated } : q));
+  };
+
+  const handleDeleteQuestion = (idx) => {
+    if (questions.length <= 1) {
+      alert('Quiz must have at least one question.');
+      return;
+    }
+    setQuestions(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDuplicateQuestion = (idx) => {
+    const target = questions[idx];
+    const duplicate = {
+      ...target,
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      question: `${target.question} (Copy)`
+    };
+    setQuestions(prev => [
+      ...prev.slice(0, idx + 1),
+      duplicate,
+      ...prev.slice(idx + 1)
     ]);
   };
 
-  // Remove a question
-  const handleRemoveQuestion = (qIndex) => {
-    if (questions.length <= 1) {
-      alert("A quiz must have at least 1 question.");
-      return;
-    }
-    setQuestions(questions.filter((_, idx) => idx !== qIndex));
-  };
-
-  // Update question text
-  const handleQuestionTextChange = (qIndex, value) => {
-    const updated = [...questions];
-    updated[qIndex].question = value;
-    setQuestions(updated);
-  };
-
-  // Update explanation text
-  const handleExplanationChange = (qIndex, value) => {
-    const updated = [...questions];
-    updated[qIndex].explanation = value;
-    setQuestions(updated);
-  };
-
-  // Add an option to a question
-  const handleAddOption = (qIndex) => {
-    const updated = [...questions];
-    if (updated[qIndex].options.length >= 6) {
-      alert("Maximum 6 options allowed per question.");
-      return;
-    }
-    updated[qIndex].options.push('');
-    setQuestions(updated);
-  };
-
-  // Remove an option from a question
-  const handleRemoveOption = (qIndex, optIndex) => {
-    const updated = [...questions];
-    if (updated[qIndex].options.length <= 2) {
-      alert("A question must have at least 2 options.");
-      return;
-    }
-    
-    // Adjust correct answer index if it gets deleted or shifted
-    if (updated[qIndex].answer === optIndex) {
-      updated[qIndex].answer = 0; // Default to first if correct one removed
-    } else if (updated[qIndex].answer > optIndex) {
-      updated[qIndex].answer -= 1; // Shift down
-    }
-    
-    updated[qIndex].options = updated[qIndex].options.filter((_, idx) => idx !== optIndex);
-    setQuestions(updated);
-  };
-
-  // Update option text
-  const handleOptionTextChange = (qIndex, optIndex, value) => {
-    const updated = [...questions];
-    updated[qIndex].options[optIndex] = value;
-    setQuestions(updated);
-  };
-
-  // Choose the correct answer option index
-  const handleSelectCorrectAnswer = (qIndex, optIndex) => {
-    const updated = [...questions];
-    const currentAns = updated[qIndex].answer;
-    if (Array.isArray(currentAns)) {
-      let arr = [...currentAns];
-      if (arr.includes(optIndex)) {
-        if (arr.length > 1) {
-          arr = arr.filter(i => i !== optIndex);
-        }
-      } else {
-        arr.push(optIndex);
-      }
-      arr.sort((a, b) => a - b);
-      updated[qIndex].answer = arr;
-    } else {
-      updated[qIndex].answer = optIndex;
-    }
-    setQuestions(updated);
-  };
-
-  // Toggle single vs multi-select mode for a question
-  const handleToggleMultipleChoice = (qIndex) => {
-    const updated = [...questions];
-    const currentAns = updated[qIndex].answer;
-    if (Array.isArray(currentAns)) {
-      // Switch to single answer mode
-      updated[qIndex].answer = currentAns[0] !== undefined ? currentAns[0] : 0;
-    } else {
-      // Switch to multi answer mode
-      updated[qIndex].answer = [currentAns !== undefined ? currentAns : 0];
-    }
-    setQuestions(updated);
-  };
-
-  // Helper to resolve category from ID, name, or alias flexibly
-  const resolveCategory = (input) => {
-    if (!input || typeof input !== 'string') return CATEGORIES[0];
-    const rawTrimmed = input.trim();
-    const cleaned = rawTrimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    // 1. Exact or case-insensitive ID match
-    const byId = CATEGORIES.find(c => c.id.toLowerCase() === rawTrimmed.toLowerCase());
-    if (byId) return byId;
-
-    // 2. Name match (exact or cleaned)
-    const byName = CATEGORIES.find(c => {
-      const cNameCleaned = c.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      return c.name.toLowerCase() === rawTrimmed.toLowerCase() || (cleaned && cNameCleaned === cleaned);
-    });
-    if (byName) return byName;
-
-    // 3. Known Aliases
-    const ALIAS_MAP = {
-      js: 'js', javascript: 'js', node: 'js', nodejs: 'js', es6: 'js', express: 'js', typescript: 'js', ts: 'js',
-      react: 'react', reactjs: 'react', jsx: 'react', frontendreact: 'react',
-      web: 'web', html: 'web', css: 'web', htmlcss: 'web', html5: 'web', css3: 'web', frontend: 'web', webdev: 'web',
-      gk: 'gk', generalknowledge: 'gk', general: 'gk', world: 'gk', trivia: 'gk',
-      aptitude: 'aptitude', logic: 'aptitude', reasoning: 'aptitude', math: 'aptitude', aptitudelogic: 'aptitude',
-      cloud: 'cloud', aws: 'cloud', azure: 'cloud', gcp: 'cloud', devops: 'cloud', serverless: 'cloud', cloudcomputing: 'cloud',
-      cs: 'cs', computerscience: 'cs', dsa: 'cs', algo: 'cs', programming: 'cs', database: 'cs', dbms: 'cs'
+  const handleAddQuestion = () => {
+    const newQ = {
+      id: Date.now(),
+      question: '',
+      options: ['Option A', 'Option B', 'Option C', 'Option D'],
+      answer: 0,
+      explanation: ''
     };
-
-    if (ALIAS_MAP[cleaned]) {
-      const matched = CATEGORIES.find(c => c.id === ALIAS_MAP[cleaned]);
-      if (matched) return matched;
-    }
-
-    // 4. Substring match
-    const partial = CATEGORIES.find(c => 
-      cleaned && (cleaned.includes(c.id.toLowerCase()) || c.name.toLowerCase().includes(cleaned))
-    );
-    if (partial) return partial;
-
-    // Fallback safely to Computer Science (or first category)
-    return CATEGORIES.find(c => c.id === 'cs') || CATEGORIES[0];
+    setQuestions(prev => [...prev, newQ]);
+    setActiveEditingIndex(questions.length);
   };
 
-  // Handle JSON submission
-  const handleJsonSubmit = (e) => {
-    e.preventDefault();
-    setJsonError(null);
-
-    try {
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonText);
-      } catch (syntaxErr) {
-        throw new Error(`JSON Formatting Error: ${syntaxErr.message}. Please verify quotes and commas.`);
-      }
-
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error("Invalid JSON structure. Root element must be an object { ... }.");
-      }
-
-      // 1. Validate & Normalize Metadata
-      if (!parsed.title || typeof parsed.title !== 'string' || !parsed.title.trim()) {
-        throw new Error("Invalid or missing 'title' (non-empty string required).");
-      }
-
-      const matchedCat = resolveCategory(parsed.categoryId);
-
-      let normalizedDifficulty = 'Medium';
-      if (parsed.difficulty && typeof parsed.difficulty === 'string') {
-        const d = parsed.difficulty.trim().toLowerCase();
-        if (d === 'easy') normalizedDifficulty = 'Easy';
-        else if (d === 'hard') normalizedDifficulty = 'Hard';
-        else if (d === 'medium') normalizedDifficulty = 'Medium';
-      }
-
-      let normalizedDuration = 10;
-      if (typeof parsed.duration === 'number' && parsed.duration > 0) {
-        normalizedDuration = Math.round(parsed.duration);
-      } else if (parsed.duration && !isNaN(parseInt(parsed.duration, 10))) {
-        const parsedDur = parseInt(parsed.duration, 10);
-        if (parsedDur > 0) normalizedDuration = parsedDur;
-      }
-
-      const normalizedDescription = (parsed.description && typeof parsed.description === 'string' && parsed.description.trim())
-        ? parsed.description.trim()
-        : `Assessment for ${parsed.title.trim()} in ${matchedCat.name}.`;
-
-      if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-        throw new Error("Invalid or missing 'questions'. Must be a non-empty array of question objects.");
-      }
-
-      // 2. Validate & Format Questions
-      const formattedQuestions = parsed.questions.map((q, idx) => {
-        if (!q || typeof q !== 'object') {
-          throw new Error(`Question ${idx + 1}: Must be an object.`);
-        }
-        if (!q.question || typeof q.question !== 'string' || !q.question.trim()) {
-          throw new Error(`Question ${idx + 1}: Invalid or missing 'question' statement.`);
-        }
-
-        let opts = [];
-        if (Array.isArray(q.options)) {
-          opts = q.options.map(o => (typeof o === 'string' ? o.trim() : String(o).trim())).filter(Boolean);
-        }
-        if (opts.length < 2) {
-          throw new Error(`Question ${idx + 1}: 'options' must contain at least 2 valid string options.`);
-        }
-
-        let answerIndex = 0;
-        if (Array.isArray(q.answer)) {
-          const parsedArr = q.answer
-            .map(n => Number(n))
-            .filter(n => !isNaN(n) && n >= 0 && n < opts.length);
-          answerIndex = Array.from(new Set(parsedArr)).sort((a, b) => a - b);
-          if (answerIndex.length === 0) answerIndex = 0;
-        } else if (typeof q.answer === 'number' && q.answer >= 0 && q.answer < opts.length) {
-          answerIndex = Math.floor(q.answer);
-        } else if (typeof q.answer === 'string') {
-          const parsedIdx = parseInt(q.answer.trim(), 10);
-          if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < opts.length) {
-            answerIndex = parsedIdx;
-          } else {
-            const matchedOptIdx = opts.findIndex(opt => opt.toLowerCase() === q.answer.trim().toLowerCase());
-            if (matchedOptIdx !== -1) {
-              answerIndex = matchedOptIdx;
-            }
-          }
-        }
-
-        return {
-          id: 2000 + idx,
-          question: q.question.trim(),
-          options: opts,
-          answer: answerIndex,
-          explanation: (q.explanation && typeof q.explanation === 'string' && q.explanation.trim()) 
-            ? q.explanation.trim() 
-            : "Correct answer verified."
-        };
-      });
-
-      let normalizedTimePerQuestion = 60;
-      if (typeof parsed.timePerQuestion === 'number' && parsed.timePerQuestion > 0) {
-        normalizedTimePerQuestion = Math.round(parsed.timePerQuestion);
-      } else {
-        normalizedTimePerQuestion = Math.max(10, Math.round((normalizedDuration * 60) / formattedQuestions.length));
-      }
-
-      // 3. Construct and Save Quiz
-      const targetId = isEditing ? id : `custom-${Date.now()}`;
-      const newQuiz = {
-        id: targetId,
-        categoryId: matchedCat.id,
-        category: matchedCat.name,
-        title: parsed.title.trim(),
-        description: normalizedDescription,
-        difficulty: normalizedDifficulty,
-        duration: normalizedDuration,
-        timePerQuestion: normalizedTimePerQuestion,
-        totalQuestions: formattedQuestions.length,
-        questions: formattedQuestions
-      };
-
-      saveCustomQuiz(newQuiz);
-
-      alert(`Success! ${isEditing ? 'Updated' : 'Imported'} "${newQuiz.title}" under category "${matchedCat.name}" with ${newQuiz.totalQuestions} questions.`);
-      navigate('/categories');
-
-    } catch (err) {
-      setJsonError(err.message || "Invalid JSON syntax.");
-    }
+  const handleMoveQuestion = (idx, direction) => {
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= questions.length) return;
+    const nextList = [...questions];
+    const [moved] = nextList.splice(idx, 1);
+    nextList.splice(targetIdx, 0, moved);
+    setQuestions(nextList);
   };
 
-  // Delete quiz handler
-  const handleDeleteQuiz = () => {
-    if (!isEditing || !id) return;
-    if (window.confirm(`Are you sure you want to delete "${title || 'this quiz'}"? This action cannot be undone.`)) {
-      deleteCustomQuiz(id);
-      alert("Quiz deleted successfully.");
-      navigate('/categories');
+  // Publish Quiz
+  const handlePublishQuiz = () => {
+    // Validate required fields
+    if (!title.trim()) {
+      alert('Please enter a quiz title.');
+      return;
     }
-  };
-
-  // AI Inline generation handler
-  const handleAiGenerateInline = async (e) => {
-    if (e) e.preventDefault();
-    if (!aiTopic.trim()) {
-      alert("Please enter a topic for AI Quiz generation.");
+    if (questions.length === 0) {
+      alert('Please add at least one question.');
       return;
     }
 
-    setAiGenerating(true);
-    setAiMessage("Synthesizing questions...");
-
-    try {
-      const generated = await generateAiQuiz({
-        topic: aiTopic.trim(),
-        difficulty: aiDifficulty,
-        questionCount: Number(aiCount),
-        onProgress: (p) => setAiMessage(p.message)
-      });
-
-      if (generated) {
-        setTitle(generated.title);
-        setDescription(generated.description);
-        setCategoryId(generated.categoryId || 'cs');
-        setDifficulty(generated.difficulty || 'Medium');
-        setDuration(generated.duration || 10);
-        if (Array.isArray(generated.questions) && generated.questions.length > 0) {
-          setQuestions(generated.questions);
-        }
-        setCreationMode('manual');
-        alert(`✨ AI Quiz generated successfully for "${aiTopic}"! You can now fine-tune the questions below.`);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to generate AI quiz. Please try again.");
-    } finally {
-      setAiGenerating(false);
-    }
-  };
-
-  // Validate manual form and submit
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    const newErrors = {};
-    
-    // 1. Validate metadata
-    if (!title.trim()) newErrors.title = "Quiz title is required.";
-    if (!description.trim()) newErrors.description = "Description is required.";
-    if (duration <= 0) newErrors.duration = "Duration must be greater than 0.";
-
-    // 2. Validate questions
-    const questionErrors = [];
-    questions.forEach((q, qIdx) => {
-      const qErr = {};
+    // Validate questions
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
       if (!q.question.trim()) {
-        qErr.question = "Question text is required.";
+        alert(`Question #${i + 1} has an empty question prompt.`);
+        return;
       }
-      
-      const optionErrs = [];
-      q.options.forEach((opt, optIdx) => {
-        if (!opt.trim()) {
-          optionErrs[optIdx] = `Option ${optIdx + 1} cannot be blank.`;
-        }
-      });
-      
-      if (optionErrs.length > 0) {
-        qErr.options = optionErrs;
+      const hasEmptyOpt = q.options.some(opt => !String(opt).trim());
+      if (hasEmptyOpt) {
+        alert(`Question #${i + 1} contains empty options.`);
+        return;
       }
-      
-      if (Object.keys(qErr).length > 0) {
-        questionErrors[qIdx] = qErr;
-      }
-    });
-
-    if (questionErrors.length > 0) {
-      newErrors.questions = questionErrors;
     }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      alert("Please correct all highlighted errors before submitting.");
-      return;
-    }
-
-    // 3. Assemble and save the quiz
-    const categoryObj = CATEGORIES.find(c => c.id === categoryId);
-    const categoryName = categoryObj ? categoryObj.name : 'General';
-    const targetId = isEditing ? id : `custom-${Date.now()}`;
-
-    const formattedQuestions = questions.map((q, idx) => ({
-      id: 1000 + idx, // Simple ID spacing
-      question: q.question.trim(),
-      options: q.options.map(o => o.trim()),
-      answer: q.answer,
-      explanation: q.explanation.trim() || "Correct answer verified."
-    }));
-
-    const parsedDur = parseInt(duration, 10);
-    const parsedTimePerQ = parseInt(timePerQuestion, 10) || Math.max(10, Math.round((parsedDur * 60) / formattedQuestions.length));
-
-    const newQuiz = {
-      id: targetId,
-      categoryId,
-      category: categoryName,
+    const quizObj = normalizeQuiz({
+      id: isEditing ? id : undefined,
       title: title.trim(),
-      description: description.trim(),
+      description: description.trim() || `Assessment on ${title}`,
+      categoryId,
       difficulty,
-      duration: parsedDur,
-      timePerQuestion: parsedTimePerQ,
-      totalQuestions: formattedQuestions.length,
-      questions: formattedQuestions
-    };
+      duration: Number(duration) || 10,
+      timePerQuestion: Number(timePerQuestion) || 60,
+      questions
+    }, { sourceType: creationMode });
 
-    try {
-      saveCustomQuiz(newQuiz);
-      
-      alert(`Success! Quiz "${title}" ${isEditing ? 'updated' : 'created'} successfully.`);
-      navigate('/categories');
-    } catch (err) {
-      console.error(err);
-      alert("Failed to save quiz. LocalStorage might be full.");
+    const savedId = saveCustomQuiz(quizObj);
+    if (savedId) {
+      setPublishedQuizId(savedId);
+      setStage('published');
+    } else {
+      alert('Failed to save quiz. Please try again.');
     }
   };
-
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      
-      {/* Top Breadcrumb */}
-      <Link to="/categories" className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Categories
-      </Link>
-
-      {/* Header Description */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-3">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20 text-xs font-semibold">
-            {isEditing ? <Edit3 className="w-4 h-4 text-brand-400" /> : <Sparkles className="w-4 h-4 text-brand-400" />}
-            <span>{isEditing ? 'Quiz Editor Engine' : 'Interactive Quiz Builder'}</span>
-          </div>
-          <h1 className="font-display font-black text-3xl sm:text-4xl text-white tracking-tight">
-            {isEditing ? `Edit Quiz: ${title || 'Loading...'}` : 'Create Custom Quiz'}
-          </h1>
-          <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
-            {isEditing
-              ? 'Update metadata, add or remove questions, edit answer options, or modify the JSON schema directly.'
-              : 'Create custom assessments either by typing questions in the form, or by pasting a JSON configuration block (perfect for importing hundreds of questions instantly).'}
-          </p>
-        </div>
-
-        {isEditing && (
-          <button
-            type="button"
-            onClick={handleDeleteQuiz}
-            className="self-start md:self-center px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2 transition-all"
-          >
-            <Trash2 className="w-4 h-4 text-rose-400" />
-            <span>Delete Quiz</span>
-          </button>
-        )}
-      </div>
-
-
-      {/* TOGGLE SELECTOR MODE */}
-      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800/80 max-w-lg">
-        <button
-          type="button"
-          onClick={() => setCreationMode('manual')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-bold transition-all focus:outline-none ${
-            creationMode === 'manual'
-              ? 'bg-brand-600 text-white shadow-glow-sm'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          Form Builder
-        </button>
-        <button
-          type="button"
-          onClick={() => setCreationMode('ai')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-bold transition-all focus:outline-none ${
-            creationMode === 'ai'
-              ? 'bg-brand-600 text-white shadow-glow-sm'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-          AI Generator
-        </button>
-        <button
-          type="button"
-          onClick={() => setCreationMode('json')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-xs font-bold transition-all focus:outline-none ${
-            creationMode === 'json'
-              ? 'bg-brand-600 text-white shadow-glow-sm'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Code className="w-4 h-4" />
-          JSON Console
-        </button>
-      </div>
-
-      {/* MODE AI GENERATOR INLINE */}
-      {creationMode === 'ai' && (
-        <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-brand-500/30 space-y-6 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 blur-3xl rounded-full pointer-events-none" />
-          
+    <div className="min-h-screen bg-black text-white py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
+        
+        {/* Top Header */}
+        <div className="flex items-center justify-between pb-8 border-b border-white/[0.08] mb-8">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-brand-500/20 text-brand-300 border border-brand-500/30">
-              <Sparkles className="w-6 h-6 animate-pulse" />
-            </div>
+            <Link to="/dashboard">
+              <Button variant="ghost" size="sm" icon={ArrowLeft}>
+                Dashboard
+              </Button>
+            </Link>
             <div>
-              <h3 className="font-display font-bold text-xl text-white">Generate Quiz with AI</h3>
-              <p className="text-xs text-slate-400">Type any topic or concept to generate questions directly into the form builder.</p>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                {isEditing ? 'Edit Assessment' : 'Quiz Studio'}
+              </h1>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Build high-integrity assessments with AI generation, document extraction, and manual authoring.
+              </p>
             </div>
           </div>
 
-          <div className="space-y-4 pt-2">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Topic or Concept</label>
-              <input
-                type="text"
-                placeholder="e.g. Docker Containers, TypeScript Generics, Quantum Physics..."
-                value={aiTopic}
-                onChange={(e) => setAiTopic(e.target.value)}
-                className="w-full px-4 py-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-brand-500"
-              />
+          {stage === 'review' && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setStage('select-mode')}>
+                Change Importer
+              </Button>
+              <Button variant="liquid" size="sm" icon={Check} onClick={handlePublishQuiz}>
+                Publish Assessment
+              </Button>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Questions Count</label>
-                <select
-                  value={aiCount}
-                  onChange={(e) => setAiCount(Number(e.target.value))}
-                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-semibold focus:outline-none"
-                >
-                  <option value={3}>3 Questions</option>
-                  <option value={5}>5 Questions</option>
-                  <option value={10}>10 Questions</option>
-                  <option value={15}>15 Questions</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Target Difficulty</label>
-                <select
-                  value={aiDifficulty}
-                  onChange={(e) => setAiDifficulty(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-semibold focus:outline-none"
-                >
-                  <option value="Easy">Easy</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Hard">Hard</option>
-                  <option value="Expert">Expert</option>
-                </select>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              onClick={handleAiGenerateInline}
-              disabled={aiGenerating || !aiTopic.trim()}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold text-sm shadow-glow-md flex items-center justify-center gap-2"
-            >
-              {aiGenerating ? (
-                <>
-                  <Cpu className="w-4 h-4 animate-spin text-brand-300" />
-                  <span>{aiMessage || 'Generating questions...'}</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                  <span>Generate Questions & Load into Editor</span>
-                </>
-              )}
-            </Button>
-          </div>
+          )}
         </div>
-      )}
 
-      {/* MODE 1: MANUAL BUILDER FORM */}
-      {creationMode === 'manual' && (
-        <form onSubmit={handleManualSubmit} className="space-y-10">
-          
-          {/* SECTION 1: QUIZ INFO CARD */}
-          <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-6 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 blur-2xl rounded-full pointer-events-none" />
-            
-            <h3 className="font-display font-bold text-lg text-white border-b border-slate-800 pb-3">
-              1. Quiz Details
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Title */}
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Quiz Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Master React Portals & Suspense"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (errors.title) setErrors(prev => ({ ...prev, title: null }));
-                  }}
-                  className={`w-full px-4 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 transition-all ${
-                    errors.title ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-brand-500 focus:ring-brand-500'
-                  }`}
-                />
-                {errors.title && <span className="text-xs text-rose-400 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{errors.title}</span>}
-              </div>
-
-              {/* Description */}
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Description</label>
-                <textarea
-                  rows="3"
-                  placeholder="Brief summary of what this quiz covers..."
-                  value={description}
-                  onChange={(e) => {
-                    setDescription(e.target.value);
-                    if (errors.description) setErrors(prev => ({ ...prev, description: null }));
-                  }}
-                  className={`w-full px-4 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 transition-all resize-none ${
-                    errors.description ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-brand-500 focus:ring-brand-500'
-                  }`}
-                />
-                {errors.description && <span className="text-xs text-rose-400 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{errors.description}</span>}
-              </div>
-
-              {/* Category selection */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Category</label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
-                >
-                  {CATEGORIES.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+        {/* Global Error Banner */}
+        {errorMessage && (
+          <div className="mb-6 p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 flex items-start gap-3 text-sm">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">{errorMessage}</p>
+              {validationErrors.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs text-red-300 list-disc list-inside">
+                  {validationErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
                   ))}
-                </select>
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* STAGE 1: SELECT CREATION METHOD */}
+        {/* ------------------------------------------------------------- */}
+        {stage === 'select-mode' && (
+          <div className="space-y-8">
+            <div className="text-center max-w-lg mx-auto mb-10">
+              <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-400 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full">
+                Step 1: Choose Creation Method
+              </span>
+              <h2 className="text-2xl font-semibold text-white mt-3">
+                How would you like to create your quiz?
+              </h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                All creation methods automatically normalize into QuizGuard's verified assessment engine.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              
+              {/* Option 1: Manual Builder */}
+              <div 
+                onClick={() => handleSelectMode('manual')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-amber-500/40 hover:bg-amber-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4 text-amber-400 group-hover:scale-110 group-hover:bg-amber-500/20 transition-all">
+                    <Edit3 className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-amber-200 transition-colors">Manual Visual Studio</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Build multiple-choice questions from scratch with rich options, code blocks, and custom explanations.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-amber-400 group-hover:text-amber-300">
+                  <span>Author manually</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
               </div>
 
-              {/* Difficulty, Duration & Per-Question Time Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Difficulty</label>
+              {/* Option 2: AI Topic Generator */}
+              <div 
+                onClick={() => handleSelectMode('ai')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-purple-500/40 hover:bg-purple-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4 text-purple-400 group-hover:scale-110 group-hover:bg-purple-500/20 transition-all">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-purple-200 transition-colors">AI Topic Synthesis</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Generate instant, curriculum-aligned questions on any subject with configurable difficulty and language.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-purple-400 group-hover:text-purple-300">
+                  <span>Prompt AI</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Option 3: Import PPT/PPTX */}
+              <div 
+                onClick={() => handleSelectMode('pptx')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-indigo-500/40 hover:bg-indigo-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-4 text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-500/20 transition-all">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-indigo-200 transition-colors">PowerPoint (.pptx)</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Extract slides and speaker notes directly from your slide decks with verifiable slide source citations.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-indigo-400 group-hover:text-indigo-300">
+                  <span>Import slides</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Option 4: Import PDF */}
+              <div 
+                onClick={() => handleSelectMode('pdf')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-sky-500/40 hover:bg-sky-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mb-4 text-sky-400 group-hover:scale-110 group-hover:bg-sky-500/20 transition-all">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-sky-200 transition-colors">PDF Document (.pdf)</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Upload textbooks or research papers. Formulates questions with page-by-page factual citations.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-sky-400 group-hover:text-sky-300">
+                  <span>Extract PDF</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Option 5: Paste Study Text */}
+              <div 
+                onClick={() => handleSelectMode('text')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-emerald-500/40 hover:bg-emerald-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 text-emerald-400 group-hover:scale-110 group-hover:bg-emerald-500/20 transition-all">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-emerald-200 transition-colors">Paste Lecture Notes</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Paste unstructured raw lecture notes, article transcripts, or textbook chapters to generate assessments.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-emerald-400 group-hover:text-emerald-300">
+                  <span>Paste text</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Option 6: Import JSON */}
+              <div 
+                onClick={() => handleSelectMode('json')}
+                className="vesper-card p-6 cursor-pointer flex flex-col justify-between group hover:border-rose-500/40 hover:bg-rose-950/10 transition-all"
+              >
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-4 text-rose-400 group-hover:scale-110 group-hover:bg-rose-500/20 transition-all">
+                    <Code className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-semibold text-base text-white group-hover:text-rose-200 transition-colors">Import JSON File</h3>
+                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                    Paste or drag-and-drop structured JSON quiz definitions with instant schema validation.
+                  </p>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-xs font-medium text-rose-400 group-hover:text-rose-300">
+                  <span>Import JSON</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* STAGE 2: INPUT CONFIGURATION FOR CHOSEN METHOD */}
+        {/* ------------------------------------------------------------- */}
+        {stage === 'input' && (
+          <div className="vesper-panel p-6 sm:p-8 space-y-6">
+            <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setStage('select-mode')} icon={ArrowLeft}>
+                  Back
+                </Button>
+                <h2 className="text-lg font-semibold capitalize text-white">
+                  {creationMode === 'ai' && 'AI Topic Generation'}
+                  {creationMode === 'pptx' && 'PowerPoint (.pptx) Importer'}
+                  {creationMode === 'pdf' && 'PDF Document Importer'}
+                  {creationMode === 'text' && 'Study Notes Text Importer'}
+                  {creationMode === 'json' && 'JSON Schema Importer'}
+                </h2>
+              </div>
+              <span className="text-xs text-zinc-400 font-mono">
+                Normalized Importer
+              </span>
+            </div>
+
+            {/* AI Mode Form */}
+            {creationMode === 'ai' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                    Quiz Topic or Exam Subject <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={aiTopic}
+                    onChange={(e) => setAiTopic(e.target.value)}
+                    placeholder="e.g. AWS Cloud Architecture, React Performance Optimization, Organic Chemistry..."
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* PPTX Mode Form */}
+            {creationMode === 'pptx' && (
+              <div className="space-y-4">
+                <div
+                  onClick={() => pptxInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.name.endsWith('.pptx')) {
+                      handlePptxUpload({ target: { files: [file] } });
+                    }
+                  }}
+                  className="border-2 border-dashed border-indigo-500/30 hover:border-indigo-400/70 rounded-2xl p-8 text-center bg-zinc-950/80 hover:bg-indigo-950/10 transition-all cursor-pointer group"
+                >
+                  <input
+                    ref={pptxInputRef}
+                    type="file"
+                    accept=".pptx"
+                    onChange={handlePptxUpload}
+                    className="hidden"
+                    id="pptx-input"
+                  />
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-3 text-indigo-400 group-hover:scale-110 group-hover:bg-indigo-500/20 transition-all">
+                    <FileUp className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-white mb-1">
+                    Upload PowerPoint (.pptx) Presentation
+                  </p>
+                  <p className="text-xs text-zinc-400 mb-4 max-w-sm mx-auto">
+                    Client-side extraction reads slide texts and speaker notes without external server storage.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      pptxInputRef.current?.click();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-medium text-xs shadow-lg shadow-indigo-500/25 transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <FileUp className="w-3.5 h-3.5" />
+                    <span>{pptxFile ? `Selected: ${pptxFile.name}` : 'Browse .pptx File'}</span>
+                  </button>
+                </div>
+
+                {parsedPptx && (
+                  <div className="p-4 rounded-xl bg-zinc-900/90 border border-indigo-500/30 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Extracted: {parsedPptx.totalSlides} Slides
+                      </span>
+                      <span className="text-zinc-400 font-mono">{pptxFile?.name}</span>
+                    </div>
+                    <div className="max-h-32 overflow-y-auto space-y-1 pr-2 text-xs text-zinc-400">
+                      {parsedPptx.slides.map((s) => (
+                        <div key={s.slideNumber} className="truncate">
+                          <span className="text-indigo-300 font-mono">Slide {s.slideNumber}:</span> {s.title}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PDF Mode Form */}
+            {creationMode === 'pdf' && (
+              <div className="space-y-4">
+                <div
+                  onClick={() => pdfInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.name.endsWith('.pdf')) {
+                      handlePdfUpload({ target: { files: [file] } });
+                    }
+                  }}
+                  className="border-2 border-dashed border-sky-500/30 hover:border-sky-400/70 rounded-2xl p-8 text-center bg-zinc-950/80 hover:bg-sky-950/10 transition-all cursor-pointer group"
+                >
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf"
+                    onChange={handlePdfUpload}
+                    className="hidden"
+                    id="pdf-input"
+                  />
+                  <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mx-auto mb-3 text-sky-400 group-hover:scale-110 group-hover:bg-sky-500/20 transition-all">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-white mb-1">
+                    Upload PDF Document (.pdf)
+                  </p>
+                  <p className="text-xs text-zinc-400 mb-4 max-w-sm mx-auto">
+                    Extracts pages and paragraphs to generate grounded questions with page citations.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      pdfInputRef.current?.click();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-medium text-xs shadow-lg shadow-sky-500/25 transition-all hover:scale-105 cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{pdfFile ? `Selected: ${pdfFile.name}` : 'Browse .pdf File'}</span>
+                  </button>
+                </div>
+
+                {parsedPdf && (
+                  <div className="p-4 rounded-xl bg-zinc-900/90 border border-sky-500/30 text-xs flex items-center justify-between">
+                    <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Extracted: {parsedPdf.totalPages} Pages
+                    </span>
+                    <span className="text-zinc-400 font-mono">{pdfFile?.name}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Text Paste Mode Form */}
+            {creationMode === 'text' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                    Quiz Title (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Distributed Systems Chapter 4 Assessment"
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                    Study Notes / Lecture Transcript <span className="text-red-400">*</span>
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={rawText}
+                    onChange={(e) => setRawText(e.target.value)}
+                    placeholder="Paste lecture notes, study material, or textbook content here..."
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* JSON Mode Form */}
+            {creationMode === 'json' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300">
+                    Paste JSON or Upload File
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={jsonInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleJsonUpload}
+                      className="hidden"
+                      id="json-file-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => jsonInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload .json</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJsonText(JSON.stringify({
+                        title: "Cloud Architecture Fundamentals",
+                        category: "Cloud Computing",
+                        difficulty: "Medium",
+                        duration: 15,
+                        questions: [
+                          {
+                            question: "What is Infrastructure as a Service (IaaS)?",
+                            options: [
+                              "Virtualized computing resources over the internet",
+                              "Managed software applications without server setup",
+                              "Platform for deploying app source code",
+                              "Database-only hosting model"
+                            ],
+                            answer: 0,
+                            explanation: "IaaS provides on-demand virtualized computing resources such as VMs, storage, and networking."
+                          }
+                        ]
+                      }, null, 2))}
+                      className="text-xs text-zinc-400 hover:text-white underline cursor-pointer"
+                    >
+                      Load Sample
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  rows={10}
+                  value={jsonText}
+                  onChange={(e) => setJsonText(e.target.value)}
+                  placeholder='{"title": "...", "questions": [{"question": "...", "options": [...], "answer": 0}]}'
+                  className="w-full bg-zinc-950 border border-white/10 rounded-xl p-4 text-xs font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-rose-500/50"
+                />
+              </div>
+            )}
+
+            {/* Common Generation Settings (For AI, PPTX, PDF, Text) */}
+            {creationMode !== 'json' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/[0.08]">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Question Count</label>
+                  <select
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+                  >
+                    <option value={5}>5 Questions</option>
+                    <option value={10}>10 Questions</option>
+                    <option value={15}>15 Questions</option>
+                    <option value={20}>20 Questions</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Difficulty Level</label>
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
                   >
                     <option value="Easy">Easy</option>
                     <option value="Medium">Medium</option>
@@ -759,363 +793,301 @@ export const CreateQuiz = () => {
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Total Limit (mins)</label>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Language</label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+                  >
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                    <option value="Hindi">Hindi</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-4">
+              <Button variant="ghost" size="md" onClick={() => setStage('select-mode')}>
+                Cancel
+              </Button>
+              <Button 
+                variant="gradient" 
+                size="md" 
+                disabled={isProcessing}
+                onClick={handleGenerateOrImport}
+                icon={isProcessing ? RefreshCw : Sparkles}
+              >
+                {isProcessing ? (processingMessage || 'Synthesizing...') : 'Synthesize Assessment & Review'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* STAGE 3: UNIFIED QUIZ REVIEW & VISUAL EDITOR */}
+        {/* ------------------------------------------------------------- */}
+        {stage === 'review' && (
+          <div className="space-y-8">
+            
+            {/* Meta Card */}
+            <div className="vesper-panel p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+                <h3 className="font-semibold text-sm text-white">Assessment Metadata</h3>
+                <span className="text-xs text-zinc-400 font-mono">{questions.length} Questions</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Title</label>
                   <input
-                    type="number"
-                    min="1"
-                    max="120"
-                    value={duration}
-                    onChange={(e) => {
-                      setDuration(e.target.value);
-                      if (errors.duration) setErrors(prev => ({ ...prev, duration: null }));
-                    }}
-                    className={`w-full px-4 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white focus:outline-none focus:ring-1 transition-all ${
-                      errors.duration ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-brand-500 focus:ring-brand-500'
-                    }`}
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Quiz Title"
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-white/40"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">Time Gap / Quest (sec)</label>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Category</label>
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                  >
+                    {CATEGORIES.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-zinc-400 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Short description of this assessment"
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Difficulty</label>
+                  <select
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value)}
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                  >
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Exam Duration (Minutes)</label>
                   <input
                     type="number"
-                    min="5"
-                    max="300"
-                    value={timePerQuestion}
-                    onChange={(e) => setTimePerQuestion(e.target.value)}
-                    placeholder="e.g. 60"
-                    className="w-full px-4 py-3 rounded-2xl bg-slate-950/80 border border-slate-700 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
+                    min={1}
+                    max={180}
+                    value={duration}
+                    onChange={(e) => setDuration(Number(e.target.value))}
+                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
                   />
                 </div>
               </div>
-
-            </div>
-          </div>
-
-          {/* SECTION 2: DYNAMIC QUESTIONS BUILDER */}
-          <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-display font-bold text-lg text-white">
-                2. Questions & Answer Key
-              </h3>
-              <Badge variant="brand" size="md">
-                {questions.length} {questions.length === 1 ? 'Question' : 'Questions'} Added
-              </Badge>
             </div>
 
-            <div className="space-y-8">
-              <AnimatePresence initial={false}>
-                {questions.map((q, qIdx) => {
-                  const qErrObj = errors.questions?.[qIdx] || {};
-                  
-                  return (
-                    <motion.div
-                      key={q.id}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 relative group shadow-lg"
-                    >
-                      {/* Header bar of question card */}
-                      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                        <div className="flex items-center gap-3">
-                          <span className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-mono font-bold flex items-center justify-center text-sm shadow-glow-sm">
-                            {qIdx + 1}
-                          </span>
-                          <h4 className="font-display font-bold text-sm sm:text-base text-white">
-                            Question Block
-                          </h4>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleMultipleChoice(qIdx)}
-                            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                              Array.isArray(q.answer)
-                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-glow-sm'
-                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                            }`}
-                            title="Toggle between single answer and multi-select mode"
-                          >
-                            <CheckSquare className="w-3.5 h-3.5 text-purple-400" />
-                            <span>{Array.isArray(q.answer) ? 'Multi-Select (Select Multiple)' : 'Single Choice'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveQuestion(qIdx)}
-                            className="p-2 rounded-xl bg-slate-950 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/20 transition-all opacity-80 group-hover:opacity-100"
-                            title="Delete Question"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Question text input */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Question Statement</label>
-                        <input
-                          type="text"
-                          placeholder="What is the output of... / Which statement is true?"
-                          value={q.question}
-                          onChange={(e) => {
-                            handleQuestionTextChange(qIdx, e.target.value);
-                            if (errors.questions) setErrors(prev => ({ ...prev, questions: null }));
-                          }}
-                          className={`w-full px-4 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 transition-all ${
-                            qErrObj.question ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700/80 focus:border-brand-500 focus:ring-brand-500'
-                          }`}
-                        />
-                        {qErrObj.question && <span className="text-xs text-rose-400 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{qErrObj.question}</span>}
-                      </div>
-
-                      {/* Options list container */}
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Options & Correct Answer</label>
-                          <span className="text-[10px] text-slate-400 italic">
-                            {Array.isArray(q.answer) ? 'Click checkmarks to toggle multiple correct answers' : 'Click checkmark to set as correct answer'}
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 gap-3.5">
-                          {q.options.map((opt, optIdx) => {
-                            const isCorrect = Array.isArray(q.answer) ? q.answer.includes(optIdx) : q.answer === optIdx;
-                            const optErr = qErrObj.options?.[optIdx];
-                            const letter = getOptionLetter(optIdx);
-                            
-                            return (
-                              <div key={optIdx} className="flex items-center gap-3">
-                                
-                                {/* Set Correct Checkbox Badge */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectCorrectAnswer(qIdx, optIdx)}
-                                  className={`w-10 h-10 border flex items-center justify-center transition-all ${
-                                    Array.isArray(q.answer) ? 'rounded-xl' : 'rounded-xl'
-                                  } ${
-                                    isCorrect
-                                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-glow-sm'
-                                      : 'bg-slate-950 border-slate-800 text-slate-600 hover:text-slate-400'
-                                  }`}
-                                  title={isCorrect ? "Correct Answer Designated" : "Mark as Correct Answer"}
-                                >
-                                  <Check className={`w-5 h-5 ${isCorrect ? 'scale-110 stroke-[3]' : 'opacity-30'}`} />
-                                </button>
-
-                                {/* Option Input field */}
-                                <div className="flex-1 relative">
-                                  <input
-                                    type="text"
-                                    placeholder={`Option ${letter}...`}
-                                    value={opt}
-                                    onChange={(e) => {
-                                      handleOptionTextChange(qIdx, optIdx, e.target.value);
-                                      if (errors.questions) setErrors(prev => ({ ...prev, questions: null }));
-                                    }}
-                                    className={`w-full pl-4 pr-10 py-3 rounded-2xl bg-slate-950/80 border text-sm text-white placeholder-slate-700 focus:outline-none focus:ring-1 transition-all ${
-                                      optErr ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-800 focus:border-brand-500 focus:ring-brand-500'
-                                    }`}
-                                  />
-                                  
-                                  {q.options.length > 2 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveOption(qIdx, optIdx)}
-                                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-rose-400 transition-colors"
-                                      title="Delete Option"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Add Option Trigger button */}
-                        {q.options.length < 6 && (
-                          <button
-                            type="button"
-                            onClick={() => handleAddOption(qIdx)}
-                            className="text-xs font-semibold text-brand-400 hover:text-brand-300 flex items-center gap-1.5 pt-1.5 focus:outline-none"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                            Add Option ({q.options.length}/6)
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Explanation field */}
-                      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                        <div className="flex items-center gap-1.5">
-                          <HelpCircle className="w-4 h-4 text-slate-400" />
-                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Answer Explanation (Optional)</label>
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="Provide details explaining why this option is correct..."
-                          value={q.explanation}
-                          onChange={(e) => handleExplanationChange(qIdx, e.target.value)}
-                          className="w-full px-4 py-3 rounded-2xl bg-slate-950/80 border border-slate-700/80 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
-                        />
-                      </div>
-
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-
-              {/* Add Question Card Button */}
-              <button
-                type="button"
-                onClick={handleAddQuestion}
-                className="w-full py-5 rounded-3xl border-2 border-dashed border-slate-800 hover:border-brand-500/40 bg-slate-900/40 hover:bg-slate-900/60 text-slate-400 hover:text-brand-300 font-semibold text-sm transition-all flex items-center justify-center gap-2 focus:outline-none"
-              >
-                <PlusCircle className="w-5 h-5" />
-                Add Another Question
-              </button>
-            </div>
-          </div>
-
-          {/* SUBMIT BUTTON ROW */}
-          <div className="flex items-center justify-end gap-4 pt-6 border-t border-slate-800/80">
-            <Link to="/categories">
-              <Button type="button" variant="secondary">
-                Cancel
-              </Button>
-            </Link>
-            
-            <Button
-              type="submit"
-              variant="primary"
-              icon={Save}
-            >
-              Create & Publish Quiz
-            </Button>
-          </div>
-
-        </form>
-      )}
-
-      {/* MODE 2: JSON IMPORT CONSOLE */}
-      {creationMode === 'json' && (
-        <form onSubmit={handleJsonSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* Left 2 Cols: JSON Code Console Editor */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <h3 className="font-display font-bold text-sm sm:text-base text-white flex items-center gap-2">
-                    <Code className="w-5 h-5 text-brand-400" />
-                    Paste JSON Schema
-                  </h3>
-                  <Badge variant="brand" size="sm">JSON Parser v1.0</Badge>
+            {/* Questions List */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-base text-white">Questions Review & Editor</h3>
+                  <p className="text-xs text-zinc-400">Review, edit, delete, or reorder questions before publishing.</p>
                 </div>
+                <Button variant="secondary" size="sm" icon={PlusCircle} onClick={handleAddQuestion}>
+                  Add Question
+                </Button>
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Raw JSON Block</label>
-                  <textarea
-                    rows="15"
-                    value={jsonText}
-                    onChange={(e) => setJsonText(e.target.value)}
-                    placeholder={`{\n  "title": "My Custom Exam",\n  ...\n}`}
-                    className="w-full px-4 py-3 rounded-2xl bg-slate-950 text-slate-300 font-mono text-xs border border-slate-800 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-700"
-                  />
-                </div>
+              {questions.map((q, idx) => (
+                <div key={q.id || idx} className="vesper-card p-6 space-y-4">
+                  {/* Question Header */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono font-bold text-white">
+                        {idx + 1}
+                      </span>
+                      {q.sourceSlide && (
+                        <Badge variant="metal" size="sm">Source: {q.sourceSlide}</Badge>
+                      )}
+                      {q.sourcePage && (
+                        <Badge variant="metal" size="sm">Source: {q.sourcePage}</Badge>
+                      )}
+                      {q.sourceNote && (
+                        <Badge variant="metal" size="sm">Source: {q.sourceNote}</Badge>
+                      )}
+                    </div>
 
-                {/* Validation Error Message Box */}
-                {jsonError && (
-                  <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-start gap-2 animate-shake">
-                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <strong className="font-semibold block mb-0.5">Validation Error</strong>
-                      {jsonError}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleMoveQuestion(idx, -1)}
+                        disabled={idx === 0}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-white disabled:opacity-20"
+                        title="Move Up"
+                      >
+                        <MoveUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleMoveQuestion(idx, 1)}
+                        disabled={idx === questions.length - 1}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-white disabled:opacity-20"
+                        title="Move Down"
+                      >
+                        <MoveDown className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDuplicateQuestion(idx)}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-white"
+                        title="Duplicate Question"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteQuestion(idx)}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400"
+                        title="Delete Question"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                )}
 
-              </div>
-            </div>
+                  {/* Question Prompt Field */}
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 mb-1">Question Prompt</label>
+                    <textarea
+                      rows={2}
+                      value={q.question}
+                      onChange={(e) => handleUpdateQuestion(idx, { question: e.target.value })}
+                      placeholder="Type question prompt..."
+                      className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
 
-            {/* Right 1 Col: Guidelines & Copy Template */}
-            <div className="lg:col-span-1 space-y-4">
-              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 blur-2xl rounded-full pointer-events-none" />
-                
-                <h3 className="font-display font-bold text-sm sm:text-base text-white">
-                  JSON Schema Template
-                </h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Use this blueprint template to shape your questions. Copy the format and replace the text with your own assessment details.
-                </p>
+                  {/* Options Matrix */}
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 mb-2">
+                      Answer Choices (Click radio to mark correct answer)
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {q.options.map((opt, optIdx) => {
+                        const isCorrect = q.answer === optIdx;
+                        return (
+                          <div
+                            key={optIdx}
+                            onClick={() => handleUpdateQuestion(idx, { answer: optIdx })}
+                            className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                              isCorrect 
+                                ? 'bg-white/10 border-white text-white shadow-sm' 
+                                : 'bg-zinc-950/60 border-white/[0.08] text-zinc-300 hover:border-white/20'
+                            }`}
+                          >
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono font-bold ${
+                              isCorrect ? 'bg-white text-black' : 'bg-white/5 text-zinc-400'
+                            }`}>
+                              {getOptionLetter(optIdx)}
+                            </span>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => {
+                                const newOpts = [...q.options];
+                                newOpts[optIdx] = e.target.value;
+                                handleUpdateQuestion(idx, { options: newOpts });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="bg-transparent text-xs text-white w-full focus:outline-none"
+                              placeholder={`Option ${getOptionLetter(optIdx)}`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                {/* Interactive template visual */}
-                <div className="relative rounded-2xl bg-slate-950 p-3 border border-slate-800 max-h-[220px] overflow-y-auto">
-                  <pre className="text-[10px] font-mono text-slate-500 select-all leading-relaxed">
-                    {sampleJsonTemplate}
-                  </pre>
-                  
-                  <button
-                    type="button"
-                    onClick={handleCopyTemplate}
-                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white transition-all flex items-center gap-1 text-[10px] font-semibold"
-                  >
-                    {copied ? (
-                      <>
-                        <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        Copy
-                      </>
-                    )}
-                  </button>
+                  {/* Explanation Field */}
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 mb-1">Explanation</label>
+                    <input
+                      type="text"
+                      value={q.explanation || ''}
+                      onChange={(e) => handleUpdateQuestion(idx, { explanation: e.target.value })}
+                      placeholder="Rationale for the correct answer..."
+                      className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30"
+                    />
+                  </div>
                 </div>
+              ))}
 
-                <div className="border-t border-slate-800/80 pt-4 space-y-2">
-                  <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">Key Attributes</h4>
-                  <ul className="text-[10px] text-slate-400 space-y-2 pl-4 list-disc leading-relaxed">
-                    <li><strong className="text-slate-200">categoryId:</strong> Accepts category ID (<code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cs</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">cloud</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">js</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">react</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">web</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">gk</code>, <code className="text-brand-400 font-bold bg-slate-950 px-1 py-0.5 rounded">aptitude</code>), category names (e.g., <code className="text-slate-300">"Cloud Computing"</code>, <code className="text-slate-300">"Computer Science"</code>), or tech keywords (<code className="text-slate-300">"AWS"</code>, <code className="text-slate-300">"Node"</code>). Auto-normalizes case and spacing.</li>
-                    <li><strong className="text-slate-200">difficulty:</strong> Accepts <code className="text-slate-300">"Easy"</code>, <code className="text-slate-300">"Medium"</code>, or <code className="text-slate-300">"Hard"</code> (case-insensitive, defaults to Medium).</li>
-                    <li><strong className="text-slate-200">answer:</strong> 0-indexed index of correct option (e.g. <code className="text-emerald-400">0</code> for 1st option) or matching option text string.</li>
-                  </ul>
-                </div>
-
+              <div className="flex items-center justify-between pt-6 border-t border-white/[0.08]">
+                <Button variant="secondary" size="md" icon={PlusCircle} onClick={handleAddQuestion}>
+                  Add Question
+                </Button>
+                <Button variant="emerald" size="lg" icon={Check} onClick={handlePublishQuiz}>
+                  Publish Assessment
+                </Button>
               </div>
             </div>
 
           </div>
+        )}
 
-          {/* Action Row */}
-          <div className="flex items-center justify-end gap-4 pt-4 border-t border-slate-800/80">
-            <Link to="/categories">
-              <Button type="button" variant="secondary">
-                Cancel
-              </Button>
-            </Link>
-            
-            <Button
-              type="submit"
-              variant="primary"
-              icon={Save}
-              disabled={!jsonText.trim()}
-            >
-              Import & Publish Quiz
-            </Button>
+        {/* ------------------------------------------------------------- */}
+        {/* STAGE 4: PUBLISHED SUCCESS */}
+        {/* ------------------------------------------------------------- */}
+        {stage === 'published' && (
+          <div className="vesper-panel p-8 text-center max-w-lg mx-auto space-y-6">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Assessment Published!</h2>
+              <p className="text-xs text-zinc-400 mt-1">
+                "{title}" is now live and ready for practice mode or live multiplayer hosting.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4">
+              <Link to={`/contest?quizId=${publishedQuizId}`}>
+                <Button variant="gradient" size="md" className="w-full" icon={Users}>
+                  Host Live Arena Session
+                </Button>
+              </Link>
+
+              <Link to={`/quiz/${publishedQuizId}/instructions`}>
+                <Button variant="emerald" size="md" className="w-full" icon={Play}>
+                  Start Practice Test
+                </Button>
+              </Link>
+
+              <Link to="/dashboard">
+                <Button variant="ghost" size="sm" className="w-full">
+                  Return to Dashboard
+                </Button>
+              </Link>
+            </div>
           </div>
+        )}
 
-        </form>
-      )}
-
+      </div>
     </div>
   );
 };

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getAttempts, clearAllAttempts, deleteAttemptById } from '../utils/storage';
 import { formatDate, formatTime } from '../utils/quizUtils';
-import { History as HistoryIcon, Trash2, Eye, ShieldAlert, CheckCircle2, Clock, BookOpen, AlertTriangle } from 'lucide-react';
+import { History as HistoryIcon, Trash2, Eye, ShieldAlert, CheckCircle2, Clock, BookOpen } from 'lucide-react';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
@@ -12,6 +12,7 @@ export const History = () => {
   const [attempts, setAttempts] = useState(() => getAttempts());
   const [filter, setFilter] = useState('all'); // 'all' | 'Completed' | 'Terminated'
   const [clearModalOpen, setClearModalOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   const filtered = attempts.filter(a => {
     if (filter === 'Completed') return a.status === 'Completed';
@@ -26,184 +27,200 @@ export const History = () => {
   };
 
   const handleDeleteSingleAttempt = (attId) => {
-    if (window.confirm("Are you sure you want to delete this attempt record?")) {
-      deleteAttemptById(attId);
-      setAttempts(prev => prev.filter(a => a.id !== attId));
+    setDeleteTargetId(attId);
+  };
+
+  const confirmDeleteSingle = () => {
+    if (deleteTargetId) {
+      deleteAttemptById(deleteTargetId);
+      setAttempts(prev => prev.filter(a => a.id !== deleteTargetId));
+      setDeleteTargetId(null);
     }
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      
-      {/* Clear Confirmation Modal */}
-      <Modal
-        isOpen={clearModalOpen}
-        onClose={() => setClearModalOpen(false)}
-        title="Clear All Attempt History?"
-        type="danger"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-300">
-            Are you sure you want to permanently delete all recorded quiz attempts from your local browser storage? This action cannot be undone.
-          </p>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setClearModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={handleClearHistory} icon={Trash2}>
-              Delete All Records
-            </Button>
+    <div className="min-h-screen bg-black text-white py-10 px-4 sm:px-6 lg:px-8 space-y-8">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        {/* Clear All Confirmation Modal */}
+        <Modal
+          isOpen={clearModalOpen}
+          onClose={() => setClearModalOpen(false)}
+          title="Clear All Attempt History?"
+          type="danger"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-zinc-300">
+              Are you sure you want to permanently delete all recorded quiz attempts from your local browser storage? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setClearModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleClearHistory} icon={Trash2}>
+                Delete All Records
+              </Button>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
 
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/10 text-brand-300 border border-brand-500/20 text-xs font-semibold">
-            <HistoryIcon className="w-4 h-4" />
-            <span>Local Attempt Records</span>
+        {/* Delete Single Attempt Modal */}
+        <Modal
+          isOpen={Boolean(deleteTargetId)}
+          onClose={() => setDeleteTargetId(null)}
+          title="Delete Assessment Record?"
+          type="danger"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-zinc-300">
+              Are you sure you want to permanently remove this attempt record from your history?
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setDeleteTargetId(null)}>
+                Cancel
+              </Button>
+              <Button variant="danger" size="sm" onClick={confirmDeleteSingle} icon={Trash2}>
+                Delete Record
+              </Button>
+            </div>
           </div>
-          <h1 className="font-display font-bold text-2xl sm:text-4xl text-white">
-            Quiz Attempt History
-          </h1>
-          <p className="text-slate-400 text-xs sm:text-sm">
-            All your proctored assessment attempts stored securely in your browser session.
-          </p>
+        </Modal>
+
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
+          <div className="space-y-1">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full">
+              Local Evaluation Records
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight mt-2">
+              Assessment History
+            </h1>
+            <p className="text-xs text-zinc-400">
+              Your past proctored test evaluations saved in local browser storage.
+            </p>
+          </div>
+
+          {attempts.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setClearModalOpen(true)}
+              icon={Trash2}
+              className="text-red-400 hover:text-red-300"
+            >
+              Clear Logs
+            </Button>
+          )}
         </div>
 
-        {attempts.length > 0 && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setClearModalOpen(true)}
-            icon={Trash2}
-            className="text-rose-400 hover:text-rose-300 border-rose-900/40 hover:bg-rose-950/40"
-          >
-            Clear History
-          </Button>
+        {/* Filter Bar */}
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-950 border border-white/10 max-w-sm">
+          {[
+            { key: 'all', label: `All (${attempts.length})` },
+            { key: 'Completed', label: 'Completed' },
+            { key: 'Terminated', label: 'Terminated' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                filter === tab.key
+                  ? 'bg-white text-black font-semibold shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* History Records List */}
+        {filtered.length === 0 ? (
+          <div className="vesper-panel p-12 text-center space-y-4">
+            <HistoryIcon className="w-8 h-8 text-zinc-600 mx-auto" />
+            <h3 className="font-semibold text-lg text-white">No Attempt History Found</h3>
+            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              You haven't completed any assessments in this category yet.
+            </p>
+            <div className="pt-2">
+              <Link to="/categories">
+                <Button variant="liquid" size="sm" icon={BookOpen}>
+                  Browse Quizzes
+                </Button>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="vesper-panel p-6 space-y-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="text-zinc-500 uppercase font-mono border-b border-white/[0.08]">
+                  <tr>
+                    <th className="py-3 px-4">Assessment Title</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4 text-right">Score</th>
+                    <th className="py-3 px-4 text-right">Accuracy</th>
+                    <th className="py-3 px-4 text-right">Time Spent</th>
+                    <th className="py-3 px-4 text-right">Status</th>
+                    <th className="py-3 px-4 text-right">Date</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {filtered.map((att) => (
+                    <tr key={att.id} className="hover:bg-white/[0.02]">
+                      <td className="py-3.5 px-4 font-medium text-white">
+                        {att.quizTitle}
+                      </td>
+                      <td className="py-3.5 px-4 text-zinc-400">
+                        {att.category || 'General'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-white">
+                        {att.score} / {att.totalQuestions}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-400">
+                        {att.percentage}%
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-zinc-400">
+                        {formatTime(att.timeTakenSeconds)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                          att.status === 'Completed'
+                            ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/50'
+                            : 'bg-red-950/80 text-red-300 border border-red-800/50'
+                        }`}>
+                          {att.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right text-zinc-500 font-mono">
+                        {formatDate(att.completedAt)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link to={`/quiz/${att.quizId}/review?attemptId=${att.id}`}>
+                            <Button variant="ghost" size="sm" className="px-2 py-1 text-xs">
+                              Review
+                            </Button>
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteSingleAttempt(att.id)}
+                            className="p-1 rounded text-zinc-500 hover:text-red-400"
+                            title="Delete Record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
+
       </div>
-
-      {/* Filter Bar */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800">
-        {[
-          { key: 'all', label: `All Attempts (${attempts.length})` },
-          { key: 'Completed', label: 'Completed' },
-          { key: 'Terminated', label: 'Terminated' }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setFilter(tab.key)}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              filter === tab.key
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Attempts List */}
-      {filtered.length > 0 ? (
-        <div className="space-y-4">
-          {filtered.map((att) => {
-            const isCompleted = att.status === 'Completed';
-            const isTerminated = att.status === 'Terminated';
-
-            return (
-              <motion.div
-                key={att.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all space-y-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6"
-              >
-                
-                {/* Left: Info */}
-                <div className="space-y-2 max-w-xl">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="brand" size="sm">{att.category}</Badge>
-                    <Badge
-                      variant={isCompleted ? 'success' : isTerminated ? 'danger' : 'warning'}
-                      size="sm"
-                    >
-                      {att.status}
-                    </Badge>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      {formatDate(att.completedAt)}
-                    </span>
-                  </div>
-
-                  <h3 className="font-display font-bold text-lg text-white">
-                    {att.quizTitle}
-                  </h3>
-
-                  {att.reason && (
-                    <p className="text-xs text-rose-300/80 font-mono bg-rose-950/40 p-2 rounded-xl border border-rose-900/30">
-                      Reason: "{att.reason}"
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-brand-400" />
-                      Time: {formatTime(att.timeTakenSeconds)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                      Warnings: {att.focusWarnings || 0}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Right: Score Pill & Actions */}
-                <div className="flex items-center gap-4 self-end sm:self-center shrink-0">
-                  <div className="text-right">
-                    <div className="font-display font-bold text-2xl text-white">
-                      {att.score} / {att.totalQuestions}
-                    </div>
-                    <div className={`text-xs font-semibold ${att.percentage >= 70 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {att.percentage}% Accuracy
-                    </div>
-                  </div>
-
-                  <Link to={`/quiz/${att.quizId}/review`}>
-                    <Button variant="outline" size="sm" icon={Eye}>
-                      Review
-                    </Button>
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSingleAttempt(att.id)}
-                    className="p-2 rounded-xl bg-slate-950 text-slate-500 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-all"
-                    title="Delete Attempt Record"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-              </motion.div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-4">
-          <HistoryIcon className="w-12 h-12 text-slate-600 mx-auto" />
-          <h3 className="font-display font-bold text-xl text-white">No Attempt History Found</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            You haven't completed or attempted any quizzes yet. Take a quiz to record your proctored results here.
-          </p>
-          <Link to="/categories">
-            <Button variant="primary" icon={BookOpen}>
-              Start a Quiz Now
-            </Button>
-          </Link>
-        </div>
-      )}
-
     </div>
   );
 };

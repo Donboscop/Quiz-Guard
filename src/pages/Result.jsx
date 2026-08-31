@@ -1,11 +1,10 @@
 import React, { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuiz } from '../context/QuizContext';
-import { StatCard } from '../components/quiz/StatCard';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { formatTime, isQuestionCorrect, isQuestionAnswered, getOptionLetter, getCorrectAnswers, getUserAnswers } from '../utils/quizUtils';
-import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award, Lightbulb, HelpCircle } from 'lucide-react';
+import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award, HelpCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
 
@@ -21,385 +20,95 @@ export const Result = () => {
     unansweredCount: 0,
     percentage: 0,
     timeTakenSeconds: 0,
-    quizTitle: 'Quiz Assessment',
+    quizTitle: 'Assessment',
     category: 'General',
     status: 'Completed'
   };
 
   useEffect(() => {
-    // Trigger celebration confetti if user achieved >= 70%
+    // Trigger confetti on high performance
     if (result.percentage >= 70) {
       try {
         confetti({
-          particleCount: 80,
-          spread: 70,
+          particleCount: 70,
+          spread: 60,
           origin: { y: 0.6 }
         });
-      } catch (e) {
-        console.log("Confetti trigger skipped");
-      }
+      } catch (e) {}
     }
   }, [result.percentage]);
 
-  // Construct players array for contest leaderboard sorting
-  const leaderboard = [];
-  if (isContestMode) {
-    if (participants && participants.length > 0) {
-      participants.forEach(p => {
-        const isUser = p.name === playerName || (p.isHost && (playerName === p.name || !playerName));
-        if (isUser) {
-          leaderboard.push({
-            name: p.name || playerName.trim() || 'You',
-            score: result.score,
-            percentage: result.percentage,
-            timeTaken: result.timeTakenSeconds,
-            status: result.status,
-            isUser: true
-          });
-        } else {
-          const res = p.result;
-          leaderboard.push({
-            name: p.name || 'Participant',
-            score: res ? res.score : (p.score || 0),
-            percentage: res ? res.percentage : 0,
-            timeTaken: res ? res.timeTakenSeconds : 0,
-            status: p.status === 'completed' ? 'Completed' : p.status === 'terminated' ? 'Terminated' : (p.status || 'Solving...'),
-            isUser: false,
-            isPending: p.status === 'in-progress' || p.status === 'in-lobby'
-          });
-        }
-      });
-    } else {
-      leaderboard.push({
-        name: playerName.trim() || 'You',
-        score: result.score,
-        percentage: result.percentage,
-        timeTaken: result.timeTakenSeconds,
-        status: result.status,
-        isUser: true
-      });
-
-      if (opponentResult) {
-        leaderboard.push({
-          name: opponentName || 'Opponent',
-          score: opponentResult.score,
-          percentage: opponentResult.percentage,
-          timeTaken: opponentResult.timeTakenSeconds,
-          status: opponentResult.status,
-          isUser: false
-        });
-      } else {
-        leaderboard.push({
-          name: opponentName || 'Opponent',
-          score: 0,
-          percentage: 0,
-          timeTaken: 0,
-          status: 'Solving...',
-          isUser: false,
-          isPending: true
-        });
-      }
-    }
-
-    // Sort: Non-pending first, higher score first, lower time taken next
-    leaderboard.sort((a, b) => {
-      if (a.isPending && !b.isPending) return 1;
-      if (!a.isPending && b.isPending) return -1;
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      return a.timeTaken - b.timeTaken;
-    });
-  }
-
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
-      
-      {/* Header Card */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="p-8 sm:p-12 rounded-3xl bg-gradient-to-b from-slate-900/90 via-slate-900 to-slate-950 border border-slate-800 text-center space-y-6 shadow-2xl relative overflow-hidden"
-      >
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-brand-600 to-indigo-500 p-[1px] mx-auto shadow-glow-md">
-          <div className="w-full h-full bg-slate-950 rounded-[23px] flex items-center justify-center text-brand-400">
-            <Trophy className="w-10 h-10" />
+    <div className="min-h-screen bg-black text-white py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-8">
+        
+        {/* Top Celebration Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="vesper-panel p-8 sm:p-12 text-center space-y-6 border-white/20"
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-zinc-300">
+            <Award className="w-3.5 h-3.5" />
+            Evaluation Report • {result.status || 'Completed'}
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-center gap-2">
-            <Badge variant="brand">{result.category}</Badge>
-            <Badge variant={result.status === 'Completed' ? 'success' : 'warning'}>
-              {result.status}
-            </Badge>
+          <div className="space-y-2">
+            <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight text-white">
+              {result.quizTitle}
+            </h1>
+            <p className="text-xs text-zinc-400 font-mono">
+              Completed in {formatTime(result.timeTakenSeconds)} • Verified Submission
+            </p>
           </div>
-          <h1 className="font-display font-extrabold text-3xl sm:text-5xl text-white tracking-tight">
-            {isContestMode ? "Live Contest Finished!" : "Quiz Assessment Completed!"}
-          </h1>
-          <p className="text-slate-400 text-sm max-w-lg mx-auto">
-            {result.quizTitle}
-          </p>
-        </div>
 
-        {/* Big Score Radial Pill */}
-        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-slate-950 border border-slate-800 shadow-inner">
-          <Award className="w-6 h-6 text-brand-400" />
-          <div className="text-left">
-            <div className="text-[10px] uppercase font-bold text-slate-400">Performance Grade</div>
-            <div className="font-display font-bold text-lg text-white">
-              {result.percentage >= 90 ? 'Mastery (A+)' : result.percentage >= 75 ? 'Proficient (A)' : result.percentage >= 50 ? 'Satisfactory (B)' : 'Needs Improvement'}
+          {/* Big Score Display */}
+          <div className="py-6 flex flex-col items-center justify-center">
+            <div className="text-6xl sm:text-7xl font-mono font-bold tracking-tight text-white">
+              {result.percentage}%
+            </div>
+            <div className="text-xs font-mono text-zinc-400 mt-2">
+              {result.score} of {result.totalQuestions} Questions Correct
             </div>
           </div>
-        </div>
-      </motion.div>
 
-      {/* MULTIPLAYER LEADERBOARD CARD */}
-      {isContestMode && (
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl"
-        >
-          <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-            <Trophy className="w-5 h-5 text-amber-400" />
-            <h3 className="font-display font-bold text-lg text-white">Contest Leaderboard</h3>
-          </div>
-
-          <div className="space-y-3">
-            {leaderboard.map((player, idx) => {
-              const isWinner = idx === 0 && !player.isPending;
-              return (
-                <div
-                  key={player.name}
-                  className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
-                    player.isUser
-                      ? 'bg-brand-500/10 border-brand-500/40 shadow-glow-sm'
-                      : 'bg-slate-950 border-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`w-7 h-7 rounded-lg font-mono font-bold flex items-center justify-center text-xs ${
-                      idx === 0
-                        ? 'bg-amber-400/20 text-amber-400 border border-amber-400/30'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      #{idx + 1}
-                    </span>
-                    <div>
-                      <span className="font-display font-bold text-sm text-white flex items-center gap-2">
-                        {player.name}
-                        {player.isUser && <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded text-slate-400 font-medium">You</span>}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-semibold block capitalize">
-                        Status: {player.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
-                    <div className="text-left sm:text-right">
-                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Score</span>
-                      <span className="font-black text-sm text-white">
-                        {player.isPending ? '—' : `${player.score} pts (${player.percentage}%)`}
-                      </span>
-                    </div>
-                    
-                    <div className="text-left sm:text-right">
-                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Time</span>
-                      <span className="font-bold text-sm text-slate-300">
-                        {player.isPending ? '—' : formatTime(player.timeTaken)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-900 border border-slate-800">
-                      {isWinner ? (
-                        <Trophy className="w-4 h-4 text-amber-400" />
-                      ) : (
-                        <Award className="w-4 h-4 text-slate-600" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Stat Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard
-          title="Score"
-          value={result.score}
-          suffix={` / ${result.totalQuestions}`}
-          color="text-brand-400"
-          bgGradient="from-brand-500/10 to-indigo-500/5"
-        />
-        <StatCard
-          title="Accuracy"
-          value={result.percentage}
-          suffix="%"
-          color="text-indigo-400"
-          bgGradient="from-indigo-500/10 to-purple-500/5"
-        />
-        <StatCard
-          title="Correct"
-          value={result.correctCount}
-          icon={CheckCircle2}
-          color="text-emerald-400"
-          bgGradient="from-emerald-500/10 to-teal-500/5"
-        />
-        <StatCard
-          title="Wrong"
-          value={result.wrongCount}
-          icon={XCircle}
-          color="text-rose-400"
-          bgGradient="from-rose-500/10 to-red-500/5"
-        />
-        <StatCard
-          title="Unanswered"
-          value={result.unansweredCount}
-          icon={MinusCircle}
-          color="text-amber-400"
-          bgGradient="from-amber-500/10 to-yellow-500/5"
-        />
-        <StatCard
-          title="Time Taken"
-          value={formatTime(result.timeTakenSeconds)}
-          icon={Clock}
-          color="text-cyan-400"
-          bgGradient="from-cyan-500/10 to-blue-500/5"
-        />
-      </div>
-
-      {/* QUESTION TIMELINE & TIME SPENT BREAKDOWN */}
-      {Array.isArray(result.questions) && result.questions.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-brand-400" />
-              <h3 className="font-display font-bold text-lg text-white">Questions & Answers Breakdown</h3>
+          {/* Quick Stat Pills */}
+          <div className="grid grid-cols-3 gap-3 max-w-md mx-auto text-xs font-mono">
+            <div className="p-3 rounded-xl bg-zinc-950 border border-white/[0.06] text-center">
+              <span className="text-emerald-400 block font-bold text-base">{result.correctCount || 0}</span>
+              <span className="text-zinc-500 text-[10px]">CORRECT</span>
             </div>
-            <span className="text-xs font-semibold text-slate-400">
-              Selected vs Correct Options & Explanations
-            </span>
+            <div className="p-3 rounded-xl bg-zinc-950 border border-white/[0.06] text-center">
+              <span className="text-red-400 block font-bold text-base">{result.wrongCount || 0}</span>
+              <span className="text-zinc-500 text-[10px]">INCORRECT</span>
+            </div>
+            <div className="p-3 rounded-xl bg-zinc-950 border border-white/[0.06] text-center">
+              <span className="text-zinc-400 block font-bold text-base">{result.unansweredCount || 0}</span>
+              <span className="text-zinc-500 text-[10px]">SKIPPED</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {result.questions.map((q, idx) => {
-              const userChoice = result.answers?.[q.id];
-              const isCorrect = isQuestionCorrect(q, userChoice);
-              const isUnanswered = !isQuestionAnswered(q, userChoice);
-              const timeSpentSec = result.questionTimes?.[q.id] || 0;
-              const userSelectedArr = getUserAnswers(userChoice);
-              const correctArr = getCorrectAnswers(q);
-
-              // Formatted user selected options text
-              const userText = isUnanswered
-                ? 'Not Answered (Skipped)'
-                : userSelectedArr.map(i => `${getOptionLetter(i)}: ${q.options[i] || ''}`).join(', ');
-
-              // Formatted correct options text
-              const correctText = correctArr.map(i => `${getOptionLetter(i)}: ${q.options[i] || ''}`).join(', ');
-
-              return (
-                <div key={q.id} className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 text-left">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="font-mono font-bold text-xs text-brand-400 bg-brand-500/10 px-2.5 py-0.5 rounded-md border border-brand-500/20">
-                      Question #{idx + 1}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        {formatTime(timeSpentSec)}
-                      </span>
-                      <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
-                        isCorrect ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
-                        isUnanswered ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
-                        'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                      }`}>
-                        {isCorrect ? '✓ Correct' : isUnanswered ? '— Skipped' : '✕ Incorrect'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <h4 className="font-display font-semibold text-sm text-white">
-                    {q.question}
-                  </h4>
-
-                  {/* Answers Comparison */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
-                    {/* User Selection */}
-                    <div className={`p-3 rounded-xl border ${
-                      isCorrect ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300' :
-                      isUnanswered ? 'bg-amber-950/20 border-amber-500/30 text-amber-300' :
-                      'bg-rose-950/40 border-rose-500/50 text-rose-200'
-                    }`}>
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider block opacity-80 mb-0.5">
-                        Your Selected Answer:
-                      </span>
-                      <span className="font-bold flex items-center gap-1.5">
-                        {isCorrect ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" /> : isUnanswered ? <MinusCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" /> : <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />}
-                        {userText}
-                      </span>
-                    </div>
-
-                    {/* Correct Solution */}
-                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-300">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider block text-emerald-400 mb-0.5">
-                        Correct Answer Solution:
-                      </span>
-                      <span className="font-bold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                        {correctText}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Explanation Box */}
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 flex items-start gap-2.5 text-xs">
-                    <Lightbulb className="w-4 h-4 text-brand-400 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] font-bold text-brand-300 uppercase tracking-wider block">
-                        Why this answer is correct:
-                      </span>
-                      <p className="text-slate-300 leading-relaxed text-[11px]">
-                        {q.explanation || `The correct option is ${correctText}. Standard assessment rules apply to this question context.`}
-                      </p>
-                    </div>
-                  </div>
-
-                </div>
-              );
-            })}
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-6 border-t border-white/[0.08]">
+            <Link to={`/quiz/${id}/review`} className="w-full sm:w-auto">
+              <Button variant="liquid" size="md" className="w-full sm:w-auto px-6" icon={BookOpen}>
+                Detailed Answer Review
+              </Button>
+            </Link>
+            <Link to={`/quiz/${id}/instructions`} className="w-full sm:w-auto">
+              <Button variant="secondary" size="md" className="w-full sm:w-auto px-6" icon={RefreshCw}>
+                Retake Assessment
+              </Button>
+            </Link>
+            <Link to="/dashboard" className="w-full sm:w-auto">
+              <Button variant="ghost" size="md" className="w-full sm:w-auto">
+                Dashboard
+              </Button>
+            </Link>
           </div>
         </motion.div>
-      )}
 
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-        <Link to={`/quiz/${id}/review`} className="w-full sm:w-auto">
-          <Button size="lg" variant="primary" icon={BookOpen} className="w-full">
-            Review Answers & Explanations
-          </Button>
-        </Link>
-        <Link to={`/quiz/${id}/instructions`} className="w-full sm:w-auto">
-          <Button size="lg" variant="secondary" icon={RefreshCw} className="w-full">
-            Try Quiz Again
-          </Button>
-        </Link>
-        <Link to="/categories" className="w-full sm:w-auto">
-          <Button size="lg" variant="ghost" icon={ArrowLeft} className="w-full">
-            Back to All Quizzes
-          </Button>
-        </Link>
       </div>
-
     </div>
   );
 };

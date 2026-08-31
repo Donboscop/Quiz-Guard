@@ -1,8 +1,10 @@
-// Utility module for AI Quiz Generation in QuizGuard
+// Unified AI & Document Quiz Generation Pipeline for QuizGuard
+// Supports: Topic prompt, PPTX slides, PDF documents, and Text Study Notes
 
 import { saveCustomQuiz } from '../data/quizzes';
+import { normalizeQuiz } from './quizNormalizer';
 
-// Built-in smart templates for offline instant generation
+// Built-in smart domain templates for offline instant generation
 const DOMAIN_TEMPLATES = {
   cricket: {
     title: "Cricket History & World Cup Mastery",
@@ -17,20 +19,20 @@ const DOMAIN_TEMPLATES = {
       },
       {
         question: "Who holds the record for the highest individual score in a Test match (400 not out)?",
-        options: ["Brian Lara", "Sachin Tendulkar", "Don Bradman", "Virender Sehwag"],
-        answer: 0,
+        options: ["Don Bradman", "Brian Lara", "Sachin Tendulkar", "Virender Sehwag"],
+        answer: 1,
         explanation: "Brian Lara scored 400* against England at St John's in 2004."
       },
       {
         question: "Which cricketer is known as the 'Sir' who achieved a career Test batting average of 99.94?",
-        options: ["Sir Don Bradman", "Sir Garfield Sobers", "Sir Viv Richards", "Sir Ian Botham"],
-        answer: 0,
+        options: ["Sir Garfield Sobers", "Sir Viv Richards", "Sir Don Bradman", "Sir Ian Botham"],
+        answer: 2,
         explanation: "Sir Donald Bradman of Australia finished his Test career with an unprecedented average of 99.94."
       },
       {
         question: "How many fielders are allowed outside the 30-yard circle during the first mandatory Powerplay in ODI cricket?",
-        options: ["Maximum 2", "Maximum 3", "Maximum 4", "Maximum 5"],
-        answer: 0,
+        options: ["Maximum 3", "Maximum 4", "Maximum 5", "Maximum 2"],
+        answer: 3,
         explanation: "During Powerplay 1 (overs 1-10 in ODIs), a maximum of 2 fielders are allowed outside the 30-yard circle."
       },
       {
@@ -40,692 +42,628 @@ const DOMAIN_TEMPLATES = {
         explanation: "Kapil Dev captained India to their historic 1983 World Cup victory over West Indies."
       },
       {
-        question: "Which bowler has taken the highest number of wickets in international Test cricket (800 wickets)?",
-        options: ["Muttiah Muralitharan", "Shane Warne", "James Anderson", "Anil Kumble"],
-        answer: 0,
-        explanation: "Sri Lanka's Muttiah Muralitharan holds the record with 800 Test wickets."
+        question: "What is the standard length of a cricket pitch between the two sets of wickets?",
+        options: ["20 yards", "22 yards", "24 yards", "18 yards"],
+        answer: 1,
+        explanation: "The official distance between wickets on a cricket pitch is 22 yards (20.12 meters)."
       },
       {
-        question: "What is the maximum allowed number of overs a single bowler can bowl in an ODI match?",
-        options: ["10 overs", "12 overs", "8 overs", "15 overs"],
-        answer: 0,
-        explanation: "In a standard 50-over One Day International, an individual bowler can bowl a maximum of 10 overs."
+        question: "Which bowler took all 10 wickets in a single Test innings for India against Pakistan in 1999?",
+        options: ["Kapil Dev", "Harbhajan Singh", "Anil Kumble", "Zaheer Khan"],
+        answer: 2,
+        explanation: "Anil Kumble achieved the historic 10-wicket haul at Feroz Shah Kotla, Delhi in 1999."
       },
       {
-        question: "Who scored the first double century in Men's ODI cricket history?",
+        question: "Which country hosted the first ever T20 International World Cup in 2007?",
+        options: ["Australia", "England", "West Indies", "South Africa"],
+        answer: 3,
+        explanation: "South Africa hosted the inaugural ICC World Twenty20 in September 2007, won by India."
+      },
+      {
+        question: "Who is the first batsman to score a double century (200*) in Men's One Day Internationals (ODIs)?",
         options: ["Sachin Tendulkar", "Virender Sehwag", "Rohit Sharma", "Chris Gayle"],
         answer: 0,
-        explanation: "Sachin Tendulkar scored the first men's ODI double hundred (200*) against South Africa in Gwalior in 2010."
+        explanation: "Sachin Tendulkar scored the first men's ODI double century (200*) against South Africa in Gwalior in 2010."
       },
       {
-        question: "Which ground is traditionally referred to as the 'Home of Cricket'?",
-        options: ["Lord's (London)", "Melbourne Cricket Ground (MCG)", "Eden Gardens (Kolkata)", "The Oval (London)"],
-        answer: 0,
-        explanation: "Lord's Cricket Ground in London, England is known globally as the 'Home of Cricket'."
-      },
-      {
-        question: "In T20 International cricket, how many overs consist of a standard innings for one team?",
-        options: ["20 overs", "15 overs", "50 overs", "10 overs"],
-        answer: 0,
-        explanation: "A standard Twenty20 innings consists of 20 overs per side."
-      },
-      {
-        question: "What does DLS stand for in rain-affected cricket matches?",
-        options: ["Duckworth-Lewis-Stern Method", "Direct Line System", "Digital Live Scoreboard", "Dynamic Length Strategy"],
-        answer: 0,
-        explanation: "DLS stands for Duckworth-Lewis-Stern method, used to calculate target scores in rain-affected matches."
-      },
-      {
-        question: "Which country hosted and won the 2019 ICC Men's Cricket World Cup?",
-        options: ["England", "New Zealand", "Australia", "India"],
-        answer: 0,
-        explanation: "England hosted and won the 2019 Cricket World Cup after a boundary countback against New Zealand."
-      },
-      {
-        question: "Who hit 6 sixes in an over off Stuart Broad during the 2007 T20 World Cup?",
-        options: ["Yuvraj Singh", "Herschelle Gibbs", "Kieron Pollard", "Chris Gayle"],
-        answer: 0,
-        explanation: "Yuvraj Singh struck 6 sixes in an over off Stuart Broad in Durban during the 2007 T20 World Cup."
-      },
-      {
-        question: "What term describes a batsman being dismissed on the very first ball they face?",
-        options: ["Golden Duck", "Diamond Duck", "Silver Duck", "Pair"],
-        answer: 0,
-        explanation: "Getting out on the first ball faced is termed a Golden Duck."
-      },
-      {
-        question: "Which team won the inaugural ICC Men's T20 World Cup in 2007?",
-        options: ["India", "Pakistan", "Australia", "West Indies"],
-        answer: 0,
-        explanation: "India won the inaugural 2007 T20 World Cup by defeating Pakistan in the Johannesburg final."
+        question: "What is the maximum number of overs a single bowler can bowl in a standard 50-over ODI match?",
+        options: ["8 overs", "10 overs", "12 overs", "15 overs"],
+        answer: 1,
+        explanation: "In a full 50-over ODI, each bowler is restricted to a maximum of 10 overs (one-fifth of the innings)."
       }
     ]
   },
-  docker: {
-    title: "Docker & Containerization Mastery",
-    description: "Test your skills on containers, Dockerfiles, multi-stage builds, networking, and volumes.",
-    categoryId: "cs",
+  aws: {
+    title: "AWS Cloud Architecture & Services",
+    description: "Core concepts of AWS EC2, S3, IAM, VPC, RDS, Lambda, and CloudWatch architecture.",
+    categoryId: "cloud",
     questions: [
       {
-        question: "In a Dockerfile, which instruction specifies the base image to use for building a container?",
-        options: ["FROM", "BASE", "IMAGE", "RUN"],
+        question: "Which AWS service provides resizable compute capacity in the cloud as virtual servers?",
+        options: ["Amazon EC2", "Amazon S3", "Amazon RDS", "AWS Lambda"],
         answer: 0,
-        explanation: "The FROM instruction sets the Base Image for subsequent instructions in a Dockerfile."
+        explanation: "Amazon Elastic Compute Cloud (EC2) provides resizable compute capacity via virtual server instances."
       },
       {
-        question: "What is the primary difference between COPY and ADD instructions in Dockerfile?",
-        options: [
-          "ADD can fetch remote URLs and unpack tar archives; COPY only copies local files.",
-          "COPY can fetch remote URLs; ADD only copies local files.",
-          "COPY runs during build time; ADD runs during runtime.",
-          "There is no difference; they are exact aliases."
-        ],
-        answer: 0,
-        explanation: "ADD supports remote URL fetching and automatic tar extraction, whereas COPY is strictly for copying local files into the container image."
+        question: "What AWS IAM component allows granting temporary security credentials for workloads or services?",
+        options: ["IAM User", "IAM Role", "IAM Group", "IAM Access Key"],
+        answer: 1,
+        explanation: "IAM Roles are designed to be assumed by trusted entities, issuing temporary credentials."
       },
       {
-        question: "Which Docker network driver allows containers to communicate directly on the host interface without NAT?",
-        options: ["host", "bridge", "overlay", "macvlan"],
-        answer: 0,
-        explanation: "The host network driver removes network isolation between the container and the Docker host."
+        question: "Which S3 storage class is engineered for long-term data archiving with retrieval times from minutes to hours?",
+        options: ["S3 Standard", "S3 One Zone-IA", "S3 Glacier Flexible Retrieval", "S3 Express One Zone"],
+        answer: 2,
+        explanation: "S3 Glacier is a secure, durable, and low-cost storage class for data archiving."
       },
       {
-        question: "How do you persistent storage data outside a container's writable layer?",
-        options: ["Docker Volumes & Bind Mounts", "Environment variables", "Container layers", "RAM disk buffers"],
-        answer: 0,
-        explanation: "Volumes and bind mounts allow data to persist independently of container lifecycles."
+        question: "In AWS VPC, which networking component enables communication between instances in VPC and the Internet?",
+        options: ["NAT Instance", "Virtual Private Gateway", "VPC Peering Connection", "Internet Gateway (IGW)"],
+        answer: 3,
+        explanation: "An Internet Gateway is a horizontally scaled, redundant VPC component that enables Internet communication."
       },
       {
-        question: "What does the command 'docker system prune' perform?",
-        options: [
-          "Removes all unused containers, networks, images, and optionally volumes.",
-          "Restarts all active containers.",
-          "Upgrades Docker Engine to the latest release.",
-          "Export container logs to a zip file."
-        ],
+        question: "Which serverless compute service lets you run code in response to events without provisioning servers?",
+        options: ["AWS Lambda", "Amazon ECS", "AWS Elastic Beanstalk", "Amazon Lightsail"],
         answer: 0,
-        explanation: "docker system prune removes stopped containers, unused networks, and dangling images."
-      }
-    ]
-  },
-  typescript: {
-    title: "TypeScript Essentials & Advanced Types",
-    description: "Assess your mastery of static typing, generics, utility types, and strict mode in TypeScript.",
-    categoryId: "js",
-    questions: [
-      {
-        question: "What is the difference between 'unknown' and 'any' in TypeScript?",
-        options: [
-          "'unknown' is type-safe because operations require type narrowing/checking before use, whereas 'any' disables type checking.",
-          "'any' requires explicit casting, while 'unknown' permits arbitrary property access.",
-          "'unknown' can only store primitive values, whereas 'any' stores objects.",
-          "They are completely identical in TypeScript 5+."
-        ],
-        answer: 0,
-        explanation: "'unknown' is the type-safe counterpart of 'any'. Anything is assignable to unknown, but unknown is not assignable to anything without a type assertion or narrowing check."
+        explanation: "AWS Lambda executes your code only when needed and scales automatically from a few requests per day to thousands per second."
       },
       {
-        question: "Which utility type constructs a type with all properties of T set to optional?",
-        options: ["Partial<T>", "Readonly<T>", "Required<T>", "Omit<T, K>"],
-        answer: 0,
-        explanation: "Partial<T> turns all properties of object type T into optional properties."
+        question: "Which AWS service provides a managed relational database supporting PostgreSQL, MySQL, and Aurora?",
+        options: ["Amazon DynamoDB", "Amazon RDS", "Amazon Redshift", "Amazon DocumentDB"],
+        answer: 1,
+        explanation: "Amazon Relational Database Service (Amazon RDS) makes it easy to set up, operate, and scale relational databases in the cloud."
       },
       {
-        question: "What does the 'never' type represent in TypeScript?",
-        options: [
-          "Values that never occur, such as a function that always throws an error or never returns.",
-          "A variable that has not been initialized yet.",
-          "A type alias for void.",
-          "An async promise that never resolves."
-        ],
-        answer: 0,
-        explanation: "'never' represents the type of values that never occur, such as unreachable code branches or infinite loops."
+        question: "What AWS service delivers content, videos, and APIs to users globally with low latency via edge locations?",
+        options: ["Amazon Route 53", "AWS Direct Connect", "Amazon CloudFront", "AWS Global Accelerator"],
+        answer: 2,
+        explanation: "Amazon CloudFront is a fast, highly secure Content Delivery Network (CDN) service."
       },
       {
-        question: "How do you enforce read-only properties in an interface definition?",
-        options: ["Using the 'readonly' modifier before property names", "Using the 'const' keyword", "Using 'frozen' modifier", "Using private getters"],
-        answer: 0,
-        explanation: "The 'readonly' modifier marks interface properties as immutable after initialization."
+        question: "Which AWS monitoring service provides metrics, logs, and alarms for resource utilization and application health?",
+        options: ["AWS CloudTrail", "AWS Config", "AWS Trusted Advisor", "Amazon CloudWatch"],
+        answer: 3,
+        explanation: "Amazon CloudWatch monitors AWS resources and applications in real-time, collecting metrics and enabling alarm triggers."
       },
       {
-        question: "What keyword is used to derive a type from an existing variable or object value?",
-        options: ["typeof", "keyof", "instanceof", "type"],
+        question: "What fully managed NoSQL key-value and document database provides single-digit millisecond latency at any scale?",
+        options: ["Amazon DynamoDB", "Amazon Aurora", "Amazon Neptune", "Amazon ElastiCache"],
         answer: 0,
-        explanation: "The 'typeof' operator in type context refers to the TypeScript type of a variable."
+        explanation: "Amazon DynamoDB is a fully managed serverless NoSQL database designed for fast performance."
+      },
+      {
+        question: "Which AWS DNS web service provides domain registration and highly reliable domain name resolution?",
+        options: ["Amazon CloudFront", "Amazon Route 53", "AWS Direct Connect", "Elastic Load Balancing"],
+        answer: 1,
+        explanation: "Amazon Route 53 is a highly available and scalable cloud Domain Name System (DNS) web service."
       }
     ]
   },
   python: {
-    title: "Python 3 & Data Science Fundamentals",
-    description: "Test list comprehensions, decorators, generators, GIL, and memory management in Python.",
+    title: "Python Core Programming & Data Structures",
+    description: "Fundamental Python concepts, data structures, OOP, comprehensions, and memory management.",
     categoryId: "cs",
     questions: [
       {
-        question: "What is the purpose of Python's Global Interpreter Lock (GIL)?",
-        options: [
-          "To prevent multiple native threads from executing Python bytecodes simultaneously in CPython.",
-          "To speed up memory allocation for dictionaries.",
-          "To automatically compile Python to C binary code.",
-          "To encrypt bytecode files before saving."
-        ],
-        answer: 0,
-        explanation: "GIL is a mutex that protects access to Python objects, preventing multiple threads from executing CPython bytecodes at once."
+        question: "Which of the following data types in Python is immutable?",
+        options: ["List", "Dictionary", "Tuple", "Set"],
+        answer: 2,
+        explanation: "Tuples in Python cannot be modified after creation, making them immutable."
       },
       {
-        question: "What does a function containing the 'yield' keyword return when invoked?",
-        options: ["A Generator object", "A Tuple", "An Async Future", "A List"],
+        question: "What will `print(type([]))` output in Python 3?",
+        options: ["<class 'list'>", "<class 'array'>", "<type 'list'>", "<class 'dict'>"],
         answer: 0,
-        explanation: "Functions with 'yield' return a generator object, which yields values lazily upon iteration."
+        explanation: "Square brackets `[]` create a list object, which has the type `<class 'list'>`."
       },
       {
-        question: "Which list comprehension correctly filters even numbers from range(10)?",
-        options: [
-          "[x for x in range(10) if x % 2 == 0]",
-          "[x filter x % 2 == 0 in range(10)]",
-          "[if x % 2 == 0: x for x in range(10)]",
-          "[x in range(10) where x % 2 == 0]"
-        ],
-        answer: 0,
-        explanation: "[x for x in range(10) if x % 2 == 0] evaluates the condition and yields even numbers."
+        question: "What keyword is used to create an anonymous inline function in Python?",
+        options: ["def", "lambda", "inline", "anon"],
+        answer: 1,
+        explanation: "The `lambda` keyword in Python is used to define small anonymous functions."
       },
       {
-        question: "What is a Python decorator?",
-        options: [
-          "A callable that takes another function as an argument and extends its behavior without modifying it explicitly.",
-          "A built-in GUI widget for styling console outputs.",
-          "A static type annotation comment.",
-          "A special syntax for class inheritance."
-        ],
-        answer: 0,
-        explanation: "Decorators wrap functions to extend or alter their execution behavior dynamically."
+        question: "What does the `GIL` stand for in the standard CPython implementation?",
+        options: ["Global Interface Language", "General Integrated Logic", "Global Instruction Loop", "Global Interpreter Lock"],
+        answer: 3,
+        explanation: "The Global Interpreter Lock (GIL) ensures that only one native thread executes Python bytecode at a time in CPython."
       },
       {
-        question: "What is the key difference between lists and tuples in Python?",
-        options: [
-          "Lists are mutable, whereas tuples are immutable.",
-          "Tuples allow duplicate elements, lists do not.",
-          "Lists store strings, tuples store numbers.",
-          "Lists use 1-based indexing, tuples use 0-based indexing."
-        ],
+        question: "Which built-in Python function returns the length of an iterable object?",
+        options: ["len()", "size()", "count()", "length()"],
         answer: 0,
-        explanation: "Lists can be modified after creation (mutable), while tuples cannot be changed (immutable)."
+        explanation: "`len()` is the standard built-in function to obtain the number of items in a container."
       }
     ]
   },
-  ai: {
-    title: "AI & Machine Learning Concepts",
-    description: "Evaluate neural networks, transformer architectures, loss functions, overfitting, and LLMs.",
-    categoryId: "cs",
+  javascript: {
+    title: "Modern JavaScript & ES6+ Architecture",
+    description: "Deep dive into event loop, closures, promises, async/await, and scope in JavaScript.",
+    categoryId: "js",
     questions: [
       {
-        question: "What key mechanism introduced in the 2017 'Attention Is All You Need' paper powers modern Transformers?",
-        options: ["Self-Attention Mechanism", "Convolutional Stride", "Recurrent Backpropagation", "Generative Adversarial Routing"],
-        answer: 0,
-        explanation: "Self-attention enables transformers to dynamically weigh the importance of input tokens relative to each other."
+        question: "Which keyword declares a block-scoped variable that cannot be reassigned?",
+        options: ["var", "const", "let", "static"],
+        answer: 1,
+        explanation: "`const` declares a block-scoped identifier that cannot be reassigned after declaration."
       },
       {
-        question: "What phenomenon occurs when a machine learning model performs exceptionally on training data but poorly on unseen test data?",
-        options: ["Overfitting", "Underfitting", "Vanishing Gradient", "Mode Collapse"],
-        answer: 0,
-        explanation: "Overfitting happens when a model learns noise and specific details of the training set rather than generalizable patterns."
+        question: "What does `typeof NaN` evaluate to in JavaScript?",
+        options: ["'undefined'", "'number'", "'object'", "'NaN'"],
+        answer: 1,
+        explanation: "In JavaScript, `NaN` (Not a Number) is technically a numeric data type, so `typeof NaN === 'number'`."
       },
       {
-        question: "Which activation function outputs values constrained between 0 and 1, often used in binary classification output layers?",
-        options: ["Sigmoid", "ReLU", "Leaky ReLU", "Softmax"],
-        answer: 0,
-        explanation: "The Sigmoid function maps any real-valued number into a value between 0 and 1."
+        question: "What will `console.log(0.1 + 0.2 === 0.3)` output in JavaScript?",
+        options: ["true", "false", "undefined", "TypeError"],
+        answer: 1,
+        explanation: "Due to IEEE 754 floating point arithmetic precision, `0.1 + 0.2` equals `0.30000000000000004`, evaluating to `false`."
       },
       {
-        question: "What technique is used to prevent neural networks from overfitting by randomly setting a fraction of input units to 0 during training?",
-        options: ["Dropout", "Batch Normalization", "Gradient Clipping", "Early Stopping"],
-        answer: 0,
-        explanation: "Dropout regularizes models by randomly deactivating neurons during training steps."
+        question: "Which array method creates a new array with all elements that pass the provided test function?",
+        options: ["map()", "filter()", "forEach()", "reduce()"],
+        answer: 1,
+        explanation: "`Array.prototype.filter()` returns a new array containing elements that satisfy the predicate callback."
       },
       {
-        question: "In Supervised Learning, what does the model require during training?",
-        options: ["Input features paired with ground-truth target labels", "Unlabeled raw data points only", "Reward signals from an interactive environment", "No data at all"],
-        answer: 0,
-        explanation: "Supervised learning relies on paired dataset examples consisting of inputs and correct target labels."
-      }
-    ]
-  },
-  devops: {
-    title: "DevOps, CI/CD & Kubernetes",
-    description: "Assess container orchestration, deployment strategies, infrastructure as code, and monitoring.",
-    categoryId: "cloud",
-    questions: [
-      {
-        question: "In Kubernetes, what is the smallest deployable computing unit that can be created and managed?",
-        options: ["Pod", "Node", "Container", "Service"],
-        answer: 0,
-        explanation: "A Pod represents a single instance of a running process in your cluster and contains one or more containers."
-      },
-      {
-        question: "Which deployment strategy gradually shifts traffic from an old version of an app to a new version to minimize risk?",
-        options: ["Canary Deployment", "Recreate Deployment", "Big Bang Deployment", "In-place Upgrade"],
-        answer: 0,
-        explanation: "Canary deployment exposes the new version to a small percentage of users before rolling out to everyone."
-      },
-      {
-        question: "What is Infrastructure as Code (IaC)?",
-        options: [
-          "Managing and provisioning infrastructure through machine-readable definition files rather than manual configuration.",
-          "Writing server code directly inside HTML files.",
-          "Running database queries using shell commands.",
-          "Deploying code without automated testing."
-        ],
-        answer: 0,
-        explanation: "IaC allows infrastructure to be versioned, tested, and provisioned automatically using code scripts (e.g. Terraform)."
-      },
-      {
-        question: "What Kubernetes object manages persistent storage requests made by Pods?",
-        options: ["PersistentVolumeClaim (PVC)", "Ingress", "ConfigMap", "DaemonSet"],
-        answer: 0,
-        explanation: "A PersistentVolumeClaim (PVC) is a request for storage resources by a user or Pod."
-      },
-      {
-        question: "What does CI/CD stand for?",
-        options: [
-          "Continuous Integration / Continuous Deployment (or Delivery)",
-          "Central Interface / Core Data",
-          "Computer Inspection / Code Debugging",
-          "Cloud Infrastructure / Container Development"
-        ],
-        answer: 0,
-        explanation: "CI/CD automates building, testing, and deploying software changes continuously."
-      }
-    ]
-  },
-  history: {
-    title: "World History & Civilization Mastery",
-    description: "Explore major historical milestones, ancient empires, global revolutions, and world conflicts.",
-    categoryId: "gk",
-    questions: [
-      {
-        question: "Which ancient civilization constructed the Great Pyramids of Giza?",
-        options: ["Ancient Egyptians", "Mesopotamians", "Ancient Greeks", "Persians"],
-        answer: 0,
-        explanation: "The Great Pyramids of Giza were built by the Ancient Egyptians during the Old Kingdom period."
-      },
-      {
-        question: "In which year did World War II officially end?",
-        options: ["1945", "1944", "1939", "1950"],
-        answer: 0,
-        explanation: "World War II ended in 1945 following the surrender of Germany and Japan."
-      },
-      {
-        question: "Who was the first Emperor of a unified China, known for beginning the Great Wall?",
-        options: ["Qin Shi Huang", "Han Wudi", "Kublai Khan", "Sun Yat-sen"],
-        answer: 0,
-        explanation: "Qin Shi Huang unified China in 221 BC and established the Qin Dynasty."
-      },
-      {
-        question: "Which historic event in 1789 marked the beginning of the French Revolution?",
-        options: ["Storming of the Bastille", "Execution of Louis XVI", "Tennis Court Oath", "Reign of Terror"],
-        answer: 0,
-        explanation: "The Storming of the Bastille on July 14, 1789 is recognized as the onset of the French Revolution."
-      },
-      {
-        question: "Which Roman general transformed the Roman Republic into the Roman Empire?",
-        options: ["Julius Caesar & Augustus", "Mark Antony", "Scipio Africanus", "Nero"],
-        answer: 0,
-        explanation: "Julius Caesar's rise and his heir Augustus becoming the first Emperor established the Roman Empire."
-      },
-      {
-        question: "What historic document signed in 1215 limited the power of the English Monarchy?",
-        options: ["Magna Carta", "Bill of Rights 1689", "Treaty of Versailles", "Declaration of Arbroath"],
-        answer: 0,
-        explanation: "The Magna Carta was signed by King John of England in 1215."
-      },
-      {
-        question: "Which global war broke out following the assassination of Archduke Franz Ferdinand in 1914?",
-        options: ["World War I", "World War II", "Crimean War", "Seven Years' War"],
-        answer: 0,
-        explanation: "The assassination of Archduke Franz Ferdinand of Austria in Sarajevo ignited World War I."
-      },
-      {
-        question: "Who led the Salt March in 1930 as part of India's non-violent independence movement?",
-        options: ["Mahatma Gandhi", "Jawaharlal Nehru", "Subhas Chandra Bose", "Sardar Patel"],
-        answer: 0,
-        explanation: "Mahatma Gandhi led the 240-mile Salt March to Dandi in 1930 to protest the British salt tax."
-      },
-      {
-        question: "Which renaissance polymath painted the Mona Lisa and The Last Supper?",
-        options: ["Leonardo da Vinci", "Michelangelo", "Raphael", "Donatello"],
-        answer: 0,
-        explanation: "Leonardo da Vinci painted both masterpieces during the Italian Renaissance."
-      },
-      {
-        question: "What period of geopolitical tension existed between the US and USSR from 1947 to 1991?",
-        options: ["The Cold War", "The Great Game", "The Thirty Years' War", "The Korean Conflict"],
-        answer: 0,
-        explanation: "The Cold War was an era of global ideological conflict between Western powers and the Soviet Union."
-      },
-      {
-        question: "Which empire ruled much of Southeastern Europe, Western Asia, and Northern Africa from 1299 to 1922?",
-        options: ["Ottoman Empire", "Byzantine Empire", "Persian Empire", "Mongol Empire"],
-        answer: 0,
-        explanation: "The Ottoman Empire was founded by Osman I and lasted over six centuries."
-      },
-      {
-        question: "Who was the first President of the United States?",
-        options: ["George Washington", "Thomas Jefferson", "Abraham Lincoln", "Benjamin Franklin"],
-        answer: 0,
-        explanation: "George Washington served as the first US President from 1789 to 1797."
-      },
-      {
-        question: "What major international peace organization was founded immediately after World War II in 1945?",
-        options: ["United Nations (UN)", "League of Nations", "NATO", "European Union"],
-        answer: 0,
-        explanation: "The United Nations was established in October 1945 to foster international cooperation."
-      },
-      {
-        question: "Which ancient trade network connected East Asia with the Mediterranean world?",
-        options: ["The Silk Road", "The Incense Route", "The Amber Road", "The Trans-Saharan Route"],
-        answer: 0,
-        explanation: "The Silk Road was an extensive network of Eurasian trade routes active for centuries."
-      },
-      {
-        question: "Which Soviet leader instituted the policies of Perestroika and Glasnost in the late 1980s?",
-        options: ["Mikhail Gorbachev", "Nikita Khrushchev", "Leonid Brezhnev", "Boris Yeltsin"],
-        answer: 0,
-        explanation: "Mikhail Gorbachev introduced Glasnost (openness) and Perestroika (restructuring) prior to USSR dissolution."
-      }
-    ]
-  },
-  geography: {
-    title: "World Geography & Earth Science",
-    description: "Test your knowledge of continents, capitals, oceans, mountain ranges, and geographical milestones.",
-    categoryId: "gk",
-    questions: [
-      {
-        question: "Which is the largest continent on Earth by both land area and population?",
-        options: ["Asia", "Africa", "North America", "Europe"],
-        answer: 0,
-        explanation: "Asia is the world's largest and most populous continent."
-      },
-      {
-        question: "What is the longest river in the world?",
-        options: ["Nile River", "Amazon River", "Yangtze River", "Mississippi River"],
-        answer: 0,
-        explanation: "The Nile River in Africa is traditionally recognized as the longest river in the world."
-      },
-      {
-        question: "Which mountain peak is the highest point above sea level on Earth?",
-        options: ["Mount Everest", "K2", "Kangchenjunga", "Kilimanjaro"],
-        answer: 0,
-        explanation: "Mount Everest in the Himalayas reaches an elevation of 8,848.86 meters above sea level."
-      },
-      {
-        question: "What is the capital city of Australia?",
-        options: ["Canberra", "Sydney", "Melbourne", "Brisbane"],
-        answer: 0,
-        explanation: "Canberra is the federal capital city of Australia."
-      },
-      {
-        question: "Which ocean is the largest and deepest on Earth?",
-        options: ["Pacific Ocean", "Atlantic Ocean", "Indian Ocean", "Arctic Ocean"],
-        answer: 0,
-        explanation: "The Pacific Ocean covers over 30% of the Earth's surface."
+        question: "Which JavaScript mechanism hoists variable and function declarations to the top of their containing scope?",
+        options: ["Closure", "Event Loop", "Hoisting", "Currying"],
+        answer: 2,
+        explanation: "Hoisting is JavaScript's default behavior of moving declarations to the top before execution."
       }
     ]
   }
 };
 
 /**
- * Generates dynamic questions procedurally for any topic string without boilerplate software jargon
+ * Generate procedural filler questions if a template or document doesn't have enough questions
  */
-function generateProceduralQuiz(topic, difficulty = 'Medium', count = 5) {
-  const cleanTopic = topic.trim();
-  const formattedTopic = cleanTopic.charAt(0).toUpperCase() + cleanTopic.slice(1);
-  
-  const questionPool = [
-    {
-      q: `What is a primary defining concept or milestone associated with ${formattedTopic}?`,
-      opts: [
-        `Understanding its fundamental rules, historical context, and core principles.`,
-        `Direct physical operating system kernel allocation.`,
-        `Converting physical network signals into database transactions.`,
-        `Strict memory cache invalidation.`
-      ],
-      ans: 0,
-      exp: `${formattedTopic} is defined by its unique principles, historical developments, and domain rules.`
-    },
-    {
-      q: `In the study and practice of ${formattedTopic}, which element is essential for success?`,
-      opts: [
-        `Consistent practice, factual precision, and systematic knowledge of core fundamentals.`,
-        `Hardcoding text parameters in hardware drivers.`,
-        `Skipping validation checks during execution.`,
-        `Ignoring foundational rules altogether.`
-      ],
-      ans: 0,
-      exp: `Mastering foundational rules and key principles is essential when studying ${formattedTopic}.`
-    },
-    {
-      q: `Which key milestone or breakthrough significantly impacted the development of ${formattedTopic}?`,
-      opts: [
-        `Standardization of rules, global adoption, and major documented historical breakthroughs.`,
-        `Automatic deletion of database records.`,
-        `Disabling network encryption layers.`,
-        `Random memory address allocation.`
-      ],
-      ans: 0,
-      exp: `Major historic events and standardized frameworks shaped modern ${formattedTopic}.`
-    },
-    {
-      q: `How are key events, achievements, or concepts categorized in ${formattedTopic}?`,
-      opts: [
-        `Through structured classifications, chronological eras, or standardized category rules.`,
-        `By rebooting physical host hardware.`,
-        `By saving variable names in temporary text files.`,
-        `Through unorganized arbitrary assignments.`
-      ],
-      ans: 0,
-      exp: `${formattedTopic} uses structured frameworks and historical chronologies for categorization.`
-    },
-    {
-      q: `When analyzing advanced topics within ${formattedTopic}, which approach provides maximum accuracy?`,
-      opts: [
-        `Evaluating empirical evidence, verified historical records, and expert consensus.`,
-        `Increasing text font size in documentation.`,
-        `Running duplicate background processes.`,
-        `Relying on unverified hearsay.`
-      ],
-      ans: 0,
-      exp: `Factual records and verified consensus yield the highest accuracy when evaluating ${formattedTopic}.`
-    }
-  ];
+function createProceduralQuestions(topic, count, startIndex = 0) {
+  const cleanTopic = topic || 'Subject';
+  return Array.from({ length: count }, (_, idx) => {
+    const qNum = startIndex + idx + 1;
+    const correctIdx = (qNum - 1) % 4; // Distribute across 0, 1, 2, 3
+    const options = [
+      `Primary foundational principle #${qNum} of ${cleanTopic}`,
+      `Secondary alternative mechanism for ${cleanTopic}`,
+      `Deprecative non-standard implementation pattern`,
+      `Commonly mistaken anti-pattern in ${cleanTopic}`
+    ];
+    // Rotate so correct answer is at correctIdx
+    const correctText = options[0];
+    options.splice(0, 1);
+    options.splice(correctIdx, 0, correctText);
 
-  // Dynamically pad questions to requested count if necessary
-  let selected = [];
-  while (selected.length < count) {
-    questionPool.forEach((item, idx) => {
-      if (selected.length < count) {
-        selected.push({
-          q: item.q,
-          opts: item.opts,
-          ans: item.ans,
-          exp: item.exp
-        });
-      }
-    });
-  }
-
-  return {
-    title: `${formattedTopic} Mastery Test`,
-    description: `Comprehensive assessment evaluating core concepts, historical milestones, and key principles in ${formattedTopic}.`,
-    categoryId: "gk",
-    difficulty: difficulty,
-    duration: Math.max(5, count * 2),
-    timePerQuestion: 60,
-    questions: selected.map((item, idx) => ({
-      id: Date.now() + idx + Math.random(),
-      question: item.q,
-      options: item.opts,
-      answer: item.ans,
-      explanation: item.exp
-    }))
-  };
+    return {
+      question: `Core concept question #${qNum}: Which statement represents an established principle of ${cleanTopic}?`,
+      options,
+      answer: correctIdx,
+      explanation: `This reflects the standard curriculum guidelines and core mechanisms of ${cleanTopic}.`
+    };
+  });
 }
 
 /**
- * Main AI Quiz Generator function
+ * Call Groq Cloud API or LLM Endpoint to generate questions from prompt/text
  */
-export async function generateAiQuiz({
-  topic,
-  difficulty = 'Medium',
-  questionCount = 5,
-  apiKey = '',
-  apiProvider = 'groq',
-  onProgress = () => {}
-}) {
-  const cleanTopic = topic.trim().toLowerCase();
-
-  // Progress simulation steps for visual feedback
-  const steps = [
-    "Contacting Groq Cloud AI Engine (Qwen 27B)...",
-    `Formulating ${questionCount} scenario-based questions for "${topic}"...`,
-    "Synthesizing option distractors and correct answer keys...",
-    "Drafting detailed explanations and timer parameters...",
-    "Finalizing QuizGuard proctored package..."
-  ];
-
-  for (let i = 0; i < steps.length; i++) {
-    onProgress({ step: i + 1, total: steps.length, message: steps[i] });
-    await new Promise(r => setTimeout(r, 450));
+async function callAiCompletion(systemPrompt, userPrompt) {
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY || '';
+  if (!apiKey || apiKey.includes('placeholder')) {
+    return null;
   }
 
-  // Groq key loaded from .env (VITE_GROQ_API_KEY)
-  const DEFAULT_GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
+  const apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`
+  };
 
-  // Determine active provider & API key
-  const activeProvider = apiProvider === 'mock' ? 'mock' : 'groq';
-  const activeApiKey = apiKey || (activeProvider === 'groq' ? DEFAULT_GROQ_KEY : '');
+  // Supported models on current Groq Cloud endpoint
+  const candidateModels = [
+    'openai/gpt-oss-120b',
+    'qwen/qwen3.8-27b',
+    'openai/gpt-oss-20b'
+  ];
 
-  if (activeApiKey && activeProvider !== 'mock') {
+  for (const model of candidateModels) {
     try {
-      console.log(`[QuizGuard AI] Sending API request to Groq Cloud (qwen/qwen3.6-27b) for topic: "${topic}" (${questionCount} questions)`);
-
-      const apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeApiKey}`
-      };
-
-      const body = {
-        model: 'qwen/qwen3.6-27b',
-        max_tokens: 8192,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert quiz generation AI for QuizGuard. Return ONLY a valid JSON object matching this structure: {"title": string, "description": string, "categoryId": "cs"|"js"|"react"|"cloud"|"gk"|"aptitude", "difficulty": string, "duration": number, "timePerQuestion": 60, "questions": [{"question": string, "options": [string, string, string, string], "answer": 0|1|2|3, "explanation": string}]}. Do not include markdown code block backticks.'
-          },
-          {
-            role: 'user',
-            content: `Generate a ${difficulty} difficulty quiz on "${topic}" with exactly ${questionCount} multiple choice questions.`
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7
-      };
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.3
+        })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const contentStr = data.choices?.[0]?.message?.content;
-        console.log("[QuizGuard AI] Groq API Response received successfully!", data);
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.warn(`[QuizGuard AI] Groq model ${model} returned status ${response.status}:`, errText);
+        continue; // Try next candidate model
+      }
 
-        if (contentStr) {
-          let cleanedStr = contentStr.trim();
-          if (cleanedStr.startsWith('```json')) {
-            cleanedStr = cleanedStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-          } else if (cleanedStr.startsWith('```')) {
-            cleanedStr = cleanedStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-          }
+      const data = await response.json();
+      const contentStr = data.choices?.[0]?.message?.content;
+      if (!contentStr) continue;
 
-          const parsed = JSON.parse(cleanedStr);
-          if (parsed && parsed.questions && Array.isArray(parsed.questions)) {
-            const finalQuiz = {
-              id: `custom_${Date.now()}`,
-              title: parsed.title || `${topic} Quiz`,
-              description: parsed.description || `AI-generated quiz on ${topic}`,
-              categoryId: parsed.categoryId || 'cs',
-              difficulty: parsed.difficulty || difficulty,
-              duration: parsed.duration || Math.max(5, questionCount * 2),
-              timePerQuestion: parsed.timePerQuestion || 60,
-              questions: parsed.questions.map((q, idx) => ({
-                id: Date.now() + idx,
-                question: q.question,
-                options: q.options,
-                answer: typeof q.answer === 'number' ? q.answer : 0,
-                explanation: q.explanation || 'Verified correct answer.'
-              })),
-              createdAt: new Date().toISOString(),
-              isCustom: true,
-              isAiGenerated: true,
-              aiModel: 'Groq Cloud (LLaMA-3.3-70B)'
-            };
+      let cleanedStr = contentStr.trim();
+      if (cleanedStr.startsWith('```json')) {
+        cleanedStr = cleanedStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanedStr.startsWith('```')) {
+        cleanedStr = cleanedStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
 
-            saveCustomQuiz(finalQuiz);
-            return finalQuiz;
-          }
-        }
-      } else {
-        const errText = await response.text();
-        console.warn(`[QuizGuard AI] Groq API error HTTP ${response.status}:`, errText);
+      const parsed = JSON.parse(cleanedStr);
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        return parsed;
       }
     } catch (err) {
-      console.warn("[QuizGuard AI] Groq API fetch error, falling back to built-in procedural engine:", err);
+      console.warn(`[QuizGuard AI] Groq model ${model} error:`, err);
     }
   }
 
-  // Matching preset domain templates
-  let matchedTemplateKey = Object.keys(DOMAIN_TEMPLATES).find(key => cleanTopic.includes(key));
-  let quizData;
+  return null;
+}
 
-  if (matchedTemplateKey) {
-    const tmpl = DOMAIN_TEMPLATES[matchedTemplateKey];
-    const slicedQuestions = tmpl.questions.slice(0, questionCount);
-    quizData = {
+/**
+ * Generate AI Quiz from a Topic
+ */
+export async function generateAiQuiz(topic, difficulty = 'Medium', questionCount = 5, language = 'English') {
+  const cleanTopic = (topic || '').trim();
+  if (!cleanTopic) throw new Error('Please provide a quiz topic or subject.');
+  const targetCount = Number(questionCount) > 0 ? Number(questionCount) : 5;
+
+  const systemPrompt = `You are QuizGuard's expert educational assessment AI.
+Generate a high quality, rigorously verified multiple-choice quiz in JSON format based on the user's prompt.
+Target language: ${language}. Difficulty: ${difficulty}. Total questions: EXACTLY ${targetCount}.
+
+CRITICAL REQUIREMENTS:
+1. You MUST generate EXACTLY ${targetCount} questions.
+2. Evenly distribute the correct answer index across 0, 1, 2, and 3 (Options A, B, C, D). Do NOT put all correct answers in index 0.
+
+Return ONLY valid JSON matching this schema:
+{
+  "title": "Clear Quiz Title",
+  "description": "Short 1-2 sentence description",
+  "categoryId": "cs" | "js" | "react" | "web" | "cloud" | "aptitude" | "gk",
+  "difficulty": "${difficulty}",
+  "duration": ${Math.max(5, targetCount * 2)},
+  "questions": [
+    {
+      "question": "Question text here?",
+      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
+      "answer": 2, // Integer 0 to 3 index of the correct option
+      "explanation": "Clear factual explanation why this option is correct."
+    }
+  ]
+}`;
+
+  try {
+    const aiResult = await callAiCompletion(systemPrompt, `Generate a ${targetCount}-question quiz about: ${cleanTopic}`);
+    if (aiResult && aiResult.questions && Array.isArray(aiResult.questions) && aiResult.questions.length > 0) {
+      let finalQuestions = aiResult.questions;
+      // If AI returned fewer questions than requested, pad with procedural questions
+      if (finalQuestions.length < targetCount) {
+        const extra = createProceduralQuestions(cleanTopic, targetCount - finalQuestions.length, finalQuestions.length);
+        finalQuestions = [...finalQuestions, ...extra];
+      } else if (finalQuestions.length > targetCount) {
+        finalQuestions = finalQuestions.slice(0, targetCount);
+      }
+      return normalizeQuiz({
+        ...aiResult,
+        questions: finalQuestions
+      }, { sourceType: 'ai' });
+    }
+  } catch (err) {
+    console.warn('[QuizGuard AI] Remote API fallback:', err);
+  }
+
+  // Fallback to template or procedural generator
+  const matchedKey = Object.keys(DOMAIN_TEMPLATES).find(k => cleanTopic.toLowerCase().includes(k));
+  if (matchedKey) {
+    const tmpl = DOMAIN_TEMPLATES[matchedKey];
+    let selectedQuestions = [...tmpl.questions];
+
+    if (selectedQuestions.length < targetCount) {
+      // Pad with procedural questions
+      const needed = targetCount - selectedQuestions.length;
+      const extra = createProceduralQuestions(cleanTopic, needed, selectedQuestions.length);
+      selectedQuestions = [...selectedQuestions, ...extra];
+    } else {
+      selectedQuestions = selectedQuestions.slice(0, targetCount);
+    }
+
+    return normalizeQuiz({
       title: tmpl.title,
       description: tmpl.description,
       categoryId: tmpl.categoryId,
-      difficulty: difficulty,
-      duration: Math.max(5, slicedQuestions.length * 2),
-      timePerQuestion: 60,
-      questions: slicedQuestions.map((q, idx) => ({
-        ...q,
-        id: Date.now() + idx
-      }))
-    };
-  } else {
-    // Generate procedurally
-    quizData = generateProceduralQuiz(topic, difficulty, questionCount);
+      difficulty,
+      questions: selectedQuestions
+    }, { sourceType: 'ai' });
   }
 
-  // Construct complete custom quiz package
-  const finalQuiz = {
-    id: `custom_${Date.now()}`,
-    title: quizData.title,
-    description: quizData.description,
-    categoryId: quizData.categoryId,
-    difficulty: difficulty,
-    duration: quizData.duration,
-    timePerQuestion: quizData.timePerQuestion,
-    questions: quizData.questions,
-    createdAt: new Date().toISOString(),
-    isCustom: true,
-    isAiGenerated: true
-  };
+  // Procedural fallback
+  const fallbackQuestions = createProceduralQuestions(cleanTopic, targetCount);
 
-  // Persist to local quizzes
-  saveCustomQuiz(finalQuiz);
+  return normalizeQuiz({
+    title: `${cleanTopic} Knowledge Check`,
+    description: `Assessment covering essential concepts and practical applications of ${cleanTopic}.`,
+    categoryId: 'cs',
+    difficulty,
+    questions: fallbackQuestions
+  }, { sourceType: 'ai' });
+}
 
-  return finalQuiz;
+/**
+ * Generate Quiz from PPTX presentation slides
+ * Preserves slide numbers and sourceSlide citations
+ */
+export async function generateQuizFromPptx(parsedPptx, options = {}) {
+  const { questionCount = 5, difficulty = 'Medium', language = 'English' } = options;
+  const targetCount = Number(questionCount) > 0 ? Number(questionCount) : 5;
+  const slides = parsedPptx.slides || [];
+  if (slides.length === 0) throw new Error('No slides available to generate questions from.');
+
+  const slideSummaries = slides.map(s => `[Slide ${s.slideNumber}: ${s.title}]\n${s.text}\n${s.notes ? `Notes: ${s.notes}` : ''}`).join('\n\n');
+
+  const systemPrompt = `You are QuizGuard's PowerPoint Assessment Generator.
+Extract and formulate EXACTLY ${targetCount} multiple-choice quiz questions STRICTLY based on the provided slide content.
+Do NOT invent outside facts. Formulate clear, educational questions from the concepts, facts, or questions present in the presentation.
+Distribute correct answers randomly across indices 0, 1, 2, and 3 (Options A, B, C, D).
+For each question, include the "sourceSlide" property specifying which slide contained the answer (e.g., "Slide 1").
+Target Language: ${language}. Difficulty: ${difficulty}.
+Return ONLY valid JSON with this format:
+{
+  "title": "${parsedPptx.title || 'PowerPoint Presentation Assessment'}",
+  "description": "Assessment generated from presentation slides.",
+  "categoryId": "cs",
+  "difficulty": "${difficulty}",
+  "duration": ${Math.max(5, targetCount * 2)},
+  "questions": [
+    {
+      "question": "Question text based on slide content?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "answer": 1,
+      "explanation": "Explanation citing facts from the slide.",
+      "sourceSlide": "Slide 1"
+    }
+  ]
+}`;
+
+  try {
+    const aiResult = await callAiCompletion(systemPrompt, `Presentation Content:\n${slideSummaries}`);
+    if (aiResult && Array.isArray(aiResult.questions) && aiResult.questions.length > 0) {
+      let finalQuestions = aiResult.questions;
+      if (finalQuestions.length < targetCount) {
+        const extra = createProceduralQuestions(parsedPptx.title || 'Presentation', targetCount - finalQuestions.length, finalQuestions.length);
+        finalQuestions = [...finalQuestions, ...extra];
+      } else if (finalQuestions.length > targetCount) {
+        finalQuestions = finalQuestions.slice(0, targetCount);
+      }
+      return normalizeQuiz({
+        ...aiResult,
+        questions: finalQuestions
+      }, { sourceType: 'pptx' });
+    }
+  } catch (err) {
+    console.warn('[QuizGuard AI] PPTX AI generation fallback:', err);
+  }
+
+  // Smart Procedural PPTX fallback
+  const questions = Array.from({ length: targetCount }, (_, idx) => {
+    const slide = slides[idx % slides.length];
+    const text = (slide.text || '').trim();
+    const lines = text.split(/[\n\.]+/).map(l => l.trim()).filter(l => l.length > 10);
+
+    const questionText = lines.find(l => l.endsWith('?') || /^(what|which|how|why|who|when|where|is|are)\b/i.test(l))
+      || `Key concept from ${slide.title}: Which statement is correct according to Slide ${slide.slideNumber}?`;
+
+    const factLines = lines.filter(l => l !== questionText);
+    const correctConcept = factLines[0] || (text.length > 15 ? text.substring(0, 70) : `Core mechanism of ${slide.title}`);
+
+    const options = [
+      correctConcept,
+      `Alternative implementation of ${slide.title}`,
+      `Secondary guideline for Slide ${slide.slideNumber}`,
+      `Standard framework prerequisite`
+    ];
+
+    const correctIdx = idx % 4;
+    const correctVal = options[0];
+    options.splice(0, 1);
+    options.splice(correctIdx, 0, correctVal);
+
+    return {
+      question: questionText,
+      options,
+      answer: correctIdx,
+      explanation: `Extracted directly from Slide ${slide.slideNumber} of the presentation.`,
+      sourceSlide: `Slide ${slide.slideNumber}`
+    };
+  });
+
+  return normalizeQuiz({
+    title: parsedPptx.title ? `${parsedPptx.title} Quiz` : 'Presentation Assessment',
+    description: `Assessment based on ${slides.length} slides from PowerPoint presentation.`,
+    categoryId: 'cs',
+    difficulty,
+    questions
+  }, { sourceType: 'pptx' });
+}
+
+/**
+ * Generate Quiz from PDF Document
+ * Preserves page numbers and sourcePage citations
+ */
+export async function generateQuizFromPdf(parsedPdf, options = {}) {
+  const { questionCount = 5, difficulty = 'Medium', language = 'English' } = options;
+  const targetCount = Number(questionCount) > 0 ? Number(questionCount) : 5;
+  const pages = parsedPdf.pages || [];
+  if (pages.length === 0) throw new Error('No pages available to generate questions from.');
+
+  const pageSummaries = pages.map(p => `[Page ${p.pageNumber}]\n${p.text.substring(0, 4000)}`).join('\n\n');
+
+  const systemPrompt = `You are QuizGuard's PDF Assessment Generator.
+Extract and formulate EXACTLY ${targetCount} multiple-choice quiz questions STRICTLY based on the provided PDF document pages.
+If the PDF already contains quiz questions or assessments, extract them faithfully with their choices and verified answers.
+Otherwise, formulate clear questions grounded in the key facts and concepts of the document.
+Distribute correct answers across indices 0, 1, 2, and 3 (Options A, B, C, D).
+For each question, include the "sourcePage" property specifying which page contained the fact (e.g. "Page 1").
+Target Language: ${language}. Difficulty: ${difficulty}.
+Return ONLY valid JSON with this format:
+{
+  "title": "${parsedPdf.title || 'PDF Document Assessment'}",
+  "description": "Assessment extracted from PDF pages.",
+  "categoryId": "cs",
+  "difficulty": "${difficulty}",
+  "duration": ${Math.max(5, targetCount * 2)},
+  "questions": [
+    {
+      "question": "Question text based on PDF page?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "answer": 2,
+      "explanation": "Explanation citing facts from the page.",
+      "sourcePage": "Page 1"
+    }
+  ]
+}`;
+
+  try {
+    const aiResult = await callAiCompletion(systemPrompt, `PDF Content:\n${pageSummaries}`);
+    if (aiResult && Array.isArray(aiResult.questions) && aiResult.questions.length > 0) {
+      let finalQuestions = aiResult.questions;
+      if (finalQuestions.length < targetCount) {
+        const extra = createProceduralQuestions(parsedPdf.title || 'Document', targetCount - finalQuestions.length, finalQuestions.length);
+        finalQuestions = [...finalQuestions, ...extra];
+      } else if (finalQuestions.length > targetCount) {
+        finalQuestions = finalQuestions.slice(0, targetCount);
+      }
+      return normalizeQuiz({
+        ...aiResult,
+        questions: finalQuestions
+      }, { sourceType: 'pdf' });
+    }
+  } catch (err) {
+    console.warn('[QuizGuard AI] PDF AI generation fallback:', err);
+  }
+
+  // Procedural PDF fallback
+  const questions = Array.from({ length: targetCount }, (_, idx) => {
+    const page = pages[idx % pages.length];
+    const correctIdx = idx % 4;
+    const options = [
+      page.text ? `${page.text.substring(0, 80)}...` : `Verified information from Page ${page.pageNumber}`,
+      `Factual error contrary to Page ${page.pageNumber}`,
+      `Unstated hypothesis from outside the text`,
+      `Invalid conclusion`
+    ];
+    const correctText = options[0];
+    options.splice(0, 1);
+    options.splice(correctIdx, 0, correctText);
+
+    return {
+      question: `Based on content found on Page ${page.pageNumber}, which statement is accurate?`,
+      options,
+      answer: correctIdx,
+      explanation: `Extracted from Page ${page.pageNumber} of the uploaded document.`,
+      sourcePage: `Page ${page.pageNumber}`
+    };
+  });
+
+  return normalizeQuiz({
+    title: parsedPdf.title ? `${parsedPdf.title} Assessment` : 'PDF Document Assessment',
+    description: `Assessment generated from ${pages.length} pages of PDF content.`,
+    categoryId: 'cs',
+    difficulty,
+    questions
+  }, { sourceType: 'pdf' });
+}
+
+/**
+ * Generate Quiz from pasted study notes / text
+ */
+export async function generateQuizFromText(parsedText, options = {}) {
+  const { questionCount = 5, difficulty = 'Medium', language = 'English' } = options;
+  const targetCount = Number(questionCount) > 0 ? Number(questionCount) : 5;
+  const sections = parsedText.sections || [];
+
+  const systemPrompt = `You are QuizGuard's Text Notes Assessment Generator.
+Extract and formulate EXACTLY ${targetCount} multiple-choice questions from the provided study text.
+Distribute correct answers randomly across indices 0, 1, 2, and 3.
+For each question, cite "sourceNote" with the section number.
+Target Language: ${language}. Difficulty: ${difficulty}.
+Return ONLY JSON with this format:
+{
+  "title": "${parsedText.title || 'Study Material Assessment'}",
+  "description": "Generated from lecture notes and textbook content.",
+  "categoryId": "cs",
+  "difficulty": "${difficulty}",
+  "duration": ${Math.max(5, targetCount * 2)},
+  "questions": [
+    {
+      "question": "Question text?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "answer": 3,
+      "explanation": "Clear explanation based on notes.",
+      "sourceNote": "Section 1"
+    }
+  ]
+}`;
+
+  try {
+    const aiResult = await callAiCompletion(systemPrompt, `Study Notes:\n${parsedText.rawText}`);
+    if (aiResult && Array.isArray(aiResult.questions) && aiResult.questions.length > 0) {
+      let finalQuestions = aiResult.questions;
+      if (finalQuestions.length < targetCount) {
+        const extra = createProceduralQuestions(parsedText.title || 'Notes', targetCount - finalQuestions.length, finalQuestions.length);
+        finalQuestions = [...finalQuestions, ...extra];
+      } else if (finalQuestions.length > targetCount) {
+        finalQuestions = finalQuestions.slice(0, targetCount);
+      }
+      return normalizeQuiz({
+        ...aiResult,
+        questions: finalQuestions
+      }, { sourceType: 'text' });
+    }
+  } catch (err) {
+    console.warn('[QuizGuard AI] Text AI generation fallback:', err);
+  }
+
+  // Procedural text fallback
+  const validSections = sections.length > 0 ? sections : [{ sectionNumber: 1, text: parsedText.rawText || '' }];
+  const questions = Array.from({ length: targetCount }, (_, idx) => {
+    const sec = validSections[idx % validSections.length];
+    const correctIdx = idx % 4;
+    const options = [
+      sec.text ? `${sec.text.substring(0, 80)}...` : `Core thesis of Section ${sec.sectionNumber}`,
+      `Contradictory claim rejected by the notes`,
+      `Outdated principle not mentioned`,
+      `Irrelevant detail`
+    ];
+    const correctText = options[0];
+    options.splice(0, 1);
+    options.splice(correctIdx, 0, correctText);
+
+    return {
+      question: `According to study notes Section ${sec.sectionNumber}, which key concept is highlighted?`,
+      options,
+      answer: correctIdx,
+      explanation: `Referenced directly in Section ${sec.sectionNumber} of the study material.`,
+      sourceNote: `Section ${sec.sectionNumber}`
+    };
+  });
+
+  return normalizeQuiz({
+    title: parsedText.title || 'Study Notes Quiz',
+    description: 'Assessment generated from provided study notes.',
+    categoryId: 'cs',
+    difficulty,
+    questions
+  }, { sourceType: 'text' });
 }

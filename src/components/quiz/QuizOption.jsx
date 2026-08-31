@@ -16,37 +16,37 @@ export const QuizOption = ({
   return (
     <motion.button
       type="button"
-      whileHover={{ scale: disabled ? 1 : 1.01 }}
-      whileTap={{ scale: disabled ? 1 : 0.99 }}
+      whileHover={{ scale: disabled ? 1 : 1.005 }}
+      whileTap={{ scale: disabled ? 1 : 0.995 }}
       onClick={() => !disabled && onSelect(index)}
       disabled={disabled}
-      className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+      className={`w-full text-left p-4 rounded-xl border transition-all duration-150 flex items-center justify-between gap-4 focus:outline-none ${
         isSelected
-          ? 'bg-brand-600/20 border-brand-500 text-white shadow-glow-sm ring-1 ring-brand-500'
-          : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:bg-slate-800/80 hover:border-slate-700'
+          ? 'bg-white/10 border-white text-white shadow-sm ring-1 ring-white'
+          : 'bg-zinc-950/80 border-white/[0.08] text-zinc-300 hover:bg-zinc-900 hover:border-white/20'
       }`}
     >
       <div className="flex items-center gap-3.5">
-        <div className={`flex items-center justify-center w-8 h-8 rounded-xl font-mono font-bold text-xs transition-colors ${
+        <div className={`flex items-center justify-center w-7 h-7 rounded-lg font-mono font-bold text-xs transition-colors ${
           isSelected
-            ? 'bg-brand-500 text-white shadow'
-            : 'bg-slate-800 text-slate-400 border border-slate-700'
+            ? 'bg-white text-black shadow'
+            : 'bg-zinc-900 text-zinc-400 border border-white/10'
         }`}>
           {letter}
         </div>
-        <span className="text-sm sm:text-base font-medium leading-relaxed">
+        <span className="text-xs sm:text-sm font-medium leading-relaxed">
           {optionText}
         </span>
       </div>
 
-      <div className={`w-5 h-5 border flex items-center justify-center transition-all ${
-        isMultiple ? 'rounded-md' : 'rounded-full'
+      <div className={`w-4 h-4 border flex items-center justify-center transition-all ${
+        isMultiple ? 'rounded' : 'rounded-full'
       } ${
         isSelected
-          ? 'bg-brand-500 border-brand-400 text-white scale-110'
-          : 'border-slate-700 bg-slate-950/50'
+          ? 'bg-white border-white text-black scale-105'
+          : 'border-white/20 bg-zinc-950'
       }`}>
-        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
       </div>
     </motion.button>
   );

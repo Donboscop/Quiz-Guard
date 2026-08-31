@@ -8,6 +8,7 @@ import { Footer } from './components/common/Footer';
 
 // Pages
 import { Home } from './pages/Home';
+import { Dashboard } from './pages/Dashboard';
 import { Categories } from './pages/Categories';
 import { Instructions } from './pages/Instructions';
 import { QuizTest } from './pages/QuizTest';
@@ -19,7 +20,9 @@ import { About } from './pages/About';
 import { NotFound } from './pages/NotFound';
 import { CreateQuiz } from './pages/CreateQuiz';
 import { ContestLobby } from './pages/ContestLobby';
+import { JoinQuiz } from './pages/JoinQuiz';
 import { AiQuizGenerator } from './pages/AiQuizGenerator';
+import { Analytics } from './pages/Analytics';
 
 // Helper component for Lenis smooth scroll & scroll-to-top on route change
 function ScrollAndLenisManager() {
@@ -64,19 +67,29 @@ export function App() {
       <QuizProvider>
         <BrowserRouter>
           <ScrollAndLenisManager />
-          <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-brand-500 selection:text-white">
+          <div className="min-h-screen flex flex-col bg-black text-white font-sans selection:bg-white selection:text-black">
             <Navbar />
             <div className="flex-1">
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/categories" element={<Categories />} />
+                <Route path="/join" element={<JoinQuiz />} />
+                <Route path="/join/:roomCode" element={<JoinQuiz />} />
+                
+                {/* Quiz Taking Flows */}
                 <Route path="/quiz/:id/instructions" element={<Instructions />} />
                 <Route path="/quiz/:id/test" element={<QuizTest />} />
                 <Route path="/quiz/:id/terminated" element={<Terminated />} />
                 <Route path="/quiz/:id/result" element={<Result />} />
                 <Route path="/quiz/:id/review" element={<Review />} />
+                
+                {/* Management & Analytics */}
                 <Route path="/history" element={<History />} />
+                <Route path="/analytics" element={<Analytics />} />
                 <Route path="/about" element={<About />} />
+                
+                {/* Creation & Studio */}
                 <Route path="/create" element={<CreateQuiz />} />
                 <Route path="/edit/new" element={<CreateQuiz />} />
                 <Route path="/quiz/edit/new" element={<CreateQuiz />} />

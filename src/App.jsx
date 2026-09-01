@@ -68,8 +68,15 @@ export function App() {
         <BrowserRouter>
           <ScrollAndLenisManager />
           <div className="min-h-screen flex flex-col bg-black text-white font-sans selection:bg-white selection:text-black">
+            {/* Skip to Main Content Link for Keyboard & Screen Reader Accessibility */}
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2.5 focus:bg-white focus:text-black focus:font-semibold focus:rounded-lg focus:shadow-2xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-white"
+            >
+              Skip to main content
+            </a>
             <Navbar />
-            <div className="flex-1">
+            <main id="main-content" className="flex-1" tabIndex="-1">
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -102,7 +109,7 @@ export function App() {
 
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </div>
+            </main>
             <Footer />
           </div>
         </BrowserRouter>

@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useQuiz } from '../context/QuizContext';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
+import { normalizeRoomCode } from '../utils/quizUtils';
 import { Shield, Users, KeyRound, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Clock, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -23,7 +24,7 @@ export const JoinQuiz = () => {
   } = useQuiz();
 
   const [inputName, setInputName] = useState(playerName || '');
-  const [inputCode, setInputCode] = useState(paramCode || '');
+  const [inputCode, setInputCode] = useState(paramCode ? normalizeRoomCode(paramCode) : '');
   const [isJoining, setIsJoining] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [isInWaitingLobby, setIsInWaitingLobby] = useState(false);
@@ -31,7 +32,7 @@ export const JoinQuiz = () => {
   // Sync route param code
   useEffect(() => {
     if (paramCode) {
-      setInputCode(paramCode.toUpperCase());
+      setInputCode(normalizeRoomCode(paramCode));
     }
   }, [paramCode]);
 
@@ -53,10 +54,15 @@ export const JoinQuiz = () => {
       return;
     }
 
+    const cleanCode = normalizeRoomCode(inputCode);
+    if (!cleanCode || cleanCode.length < 5) {
+      setErrorMessage('Please enter a valid room code (e.g. QG-03NX8).');
+      return;
+    }
+
     setIsJoining(true);
     setErrorMessage(null);
 
-    const cleanCode = inputCode.trim().toUpperCase();
     const result = await joinRoomInSupabase(cleanCode, inputName.trim());
 
     if (result && result.success) {
@@ -124,10 +130,10 @@ export const JoinQuiz = () => {
                 <input
                   type="text"
                   required
-                  maxLength={10}
+                  maxLength={20}
                   value={inputCode}
                   onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. QG4829"
+                  placeholder="e.g. QG-03NX8 or 03NX8"
                   className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-center text-lg font-mono font-bold tracking-widest text-white placeholder:text-zinc-700 focus:outline-none focus:border-white/40 uppercase"
                 />
               </div>

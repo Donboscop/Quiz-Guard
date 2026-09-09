@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { saveAttempt, saveCurrentQuizState, getCurrentQuizState, clearCurrentQuizState } from '../utils/storage';
-import { calculateResults } from '../utils/quizUtils';
+import { calculateResults, normalizeRoomCode } from '../utils/quizUtils';
 import { Peer } from 'peerjs';
 import { supabase } from '../lib/supabase';
 
@@ -173,8 +173,8 @@ export const QuizProvider = ({ children }) => {
   }, []);
 
   const joinRoomInSupabase = useCallback(async (roomCode, participantName) => {
-    if (!roomCode.trim() || !participantName.trim()) return { success: false, error: 'Invalid details' };
-    const cleanCode = roomCode.trim().toUpperCase();
+    if (!roomCode?.trim() || !participantName?.trim()) return { success: false, error: 'Invalid details' };
+    const cleanCode = normalizeRoomCode(roomCode);
     const pId = 'p-' + Math.random().toString(36).substring(2, 9);
 
     try {

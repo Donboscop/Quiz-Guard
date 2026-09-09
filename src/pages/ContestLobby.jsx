@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { getQuizzesList } from '../data/quizzes';
 import { useQuiz } from '../context/QuizContext';
 import { getContestLeaderboard } from '../utils/storage';
-import { formatTime, formatDate } from '../utils/quizUtils';
+import { formatTime, formatDate, normalizeRoomCode } from '../utils/quizUtils';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { 
@@ -126,12 +126,17 @@ export const ContestLobby = () => {
       setLobbyError("Please enter the room code.");
       return;
     }
+    const cleanCode = normalizeRoomCode(inputCode);
+    if (!cleanCode || cleanCode.length < 5) {
+      setLobbyError("Please enter a valid room code (e.g. QG-03NX8).");
+      return;
+    }
     setLoading(true);
     setLobbyError(null);
 
-    const res = await joinRoomInSupabase(inputCode.trim().toUpperCase(), studentNickname.trim());
+    const res = await joinRoomInSupabase(cleanCode, studentNickname.trim());
     if (res && res.success) {
-      navigate(`/join/${inputCode.trim().toUpperCase()}`);
+      navigate(`/join/${cleanCode}`);
     } else {
       setLobbyError(res?.error || "Failed to join room. Verify code.");
       setLoading(false);
@@ -529,10 +534,10 @@ export const ContestLobby = () => {
                     <label className="block text-xs font-medium text-zinc-300 mb-1.5">Room Code</label>
                     <input
                       type="text"
-                      maxLength={10}
+                      maxLength={20}
                       value={inputCode}
                       onChange={(e) => setInputCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. QG4829"
+                      placeholder="e.g. QG-03NX8 or 03NX8"
                       className="w-full bg-zinc-950 border border-white/10 rounded-xl px-4 py-3 text-center text-lg font-mono font-bold tracking-widest text-white uppercase focus:outline-none focus:border-white/40"
                     />
                   </div>

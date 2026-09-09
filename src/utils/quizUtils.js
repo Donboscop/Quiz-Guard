@@ -165,4 +165,22 @@ export const formatDate = (isoString) => {
   }
 };
 
+/**
+ * Normalizes user-inputted room codes by removing spaces, handling prefixes and casing
+ * e.g., "QG - 03NX8" -> "QG-03NX8", "03nx8" -> "QG-03NX8", "QG03NX8" -> "QG-03NX8"
+ * @param {string} code
+ * @returns {string}
+ */
+export const normalizeRoomCode = (code) => {
+  if (!code) return '';
+  let clean = code.toString().trim().replace(/[\s_]/g, '').toUpperCase();
+  let noHyphen = clean.replace(/-/g, '');
+  if (noHyphen.startsWith('QG')) {
+    clean = 'QG-' + noHyphen.slice(2);
+  } else if (noHyphen.length > 0) {
+    clean = 'QG-' + noHyphen;
+  }
+  return clean;
+};
+
 

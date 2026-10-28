@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams, Link } from 'react-router-dom';
 import { getQuizzesList } from '../data/quizzes';
 import { useQuiz } from '../context/QuizContext';
 import { getContestLeaderboard } from '../utils/storage';
 import { formatTime, formatDate, normalizeRoomCode } from '../utils/quizUtils';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
+import { supabase } from '../lib/supabase';
+import { LiveLeaderboard } from '../components/contest/LiveLeaderboard';
 import { 
   Users, Copy, Check, Play, ArrowRight, ArrowLeft, RefreshCw, AlertCircle, 
   Trophy, Shield, Eye, Lock, Settings2, Share2, Sparkles, KeyRound
@@ -15,7 +17,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 export const ContestLobby = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { roomCode: routeRoomCode } = useParams();
   const quizIdParam = searchParams.get('quizId');
+  const tabParam = searchParams.get('tab');
+  const codeParam = searchParams.get('roomCode') || routeRoomCode;
   const quizzes = getQuizzesList();
   
   const initialQuizId = quizzes.find(q => q.id === quizIdParam)?.id || quizzes[0]?.id || '';
@@ -30,6 +35,8 @@ export const ContestLobby = () => {
     joinRoomInSupabase,
     startContestInSupabase,
     currentRoomCode,
+    currentParticipantId,
+    isHost,
     activeQuiz,
     sessionStatus,
     supabaseStatus,
@@ -37,10 +44,14 @@ export const ContestLobby = () => {
     refreshSupabaseConnection
   } = useQuiz();
 
-  const [activeTab, setActiveTab] = useState('host'); // 'host' | 'join' | 'leaderboard'
+  const [activeTab, setActiveTab] = useState(codeParam || tabParam === 'leaderboard' ? 'leaderboard' : 'host'); // 'host' | 'join' | 'leaderboard'
   const [selectedQuizId, setSelectedQuizId] = useState(initialQuizId);
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
+  const [leaderboardRoomInput, setLeaderboardRoomInput] = useState(codeParam || currentRoomCode || '');
+  const [selectedLeaderboardRoom, setSelectedLeaderboardRoom] = useState(codeParam || currentRoomCode || '');
+  const [recentRooms, setRecentRooms] = useState([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lobbyError, setLobbyError] = useState(null);
@@ -67,6 +78,35 @@ export const ContestLobby = () => {
       if (match) setSelectedQuizId(match.id);
     }
   }, [quizIdParam]);
+
+  // Fetch recent Supabase rooms when entering leaderboard tab
+  useEffect(() => {
+    if (activeTab === 'leaderboard') {
+      const fetchRooms = async () => {
+        try {
+          setLoadingRecent(true);
+          const { data, error } = await supabase
+            .from('rooms')
+            .select('id, quiz_id, host_name, status, created_at, start_at')
+            .order('created_at', { ascending: false })
+            .limit(6);
+
+          if (!error && data) {
+            setRecentRooms(data);
+            if (!selectedLeaderboardRoom && data.length > 0) {
+              setSelectedLeaderboardRoom(currentRoomCode || data[0].id);
+              setLeaderboardRoomInput(currentRoomCode || data[0].id);
+            }
+          }
+        } catch (e) {
+          console.warn("Recent rooms fetch note:", e);
+        } finally {
+          setLoadingRecent(false);
+        }
+      };
+      fetchRooms();
+    }
+  }, [activeTab, currentRoomCode, selectedLeaderboardRoom]);
 
   // Navigate when test starts
   useEffect(() => {
@@ -596,64 +636,91 @@ export const ContestLobby = () => {
               </div>
             )}
 
-            {/* TAB 3: PAST CONTEST LEADERBOARD */}
+            {/* TAB 3: LIVE SESSION & PAST CONTEST LEADERBOARD */}
             {activeTab === 'leaderboard' && (
-              <div className="vesper-panel p-6 sm:p-8 space-y-6">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">Multiplayer Contest Records</h2>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Historical records of live classroom competitions and head-to-head matches.
-                  </p>
+              <div className="space-y-6">
+                
+                {/* Room Lookup Card */}
+                <div className="vesper-panel p-6 sm:p-8 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-white">Live & Historical Leaderboards</h2>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Inspect authoritative rankings, accurate tie-breaking, and class metrics directly from Supabase.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={leaderboardRoomInput}
+                        onChange={(e) => setLeaderboardRoomInput(e.target.value.toUpperCase())}
+                        placeholder="Enter Room Code (e.g. QG-XXXXX)"
+                        className="bg-zinc-950 border border-white/10 rounded-xl px-4 py-2 text-xs font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/40 uppercase"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const clean = normalizeRoomCode(leaderboardRoomInput);
+                          if (clean) setSelectedLeaderboardRoom(clean);
+                        }}
+                      >
+                        Inspect
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Recent Sessions Quick Selector */}
+                  {recentRooms.length > 0 && (
+                    <div className="pt-2 border-t border-white/[0.06]">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block mb-2">
+                        Recent Active & Concluded Sessions
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {recentRooms.map((r) => {
+                          const isSelected = selectedLeaderboardRoom === r.id;
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedLeaderboardRoom(r.id);
+                                setLeaderboardRoomInput(r.id);
+                              }}
+                              className={`px-3 py-1.5 rounded-lg border text-xs font-mono flex items-center gap-2 transition-all ${
+                                isSelected
+                                  ? 'bg-white/15 border-white/30 text-white shadow-sm'
+                                  : 'bg-zinc-950 border-white/[0.08] text-zinc-400 hover:text-white hover:border-white/20'
+                              }`}
+                            >
+                              <span className="font-bold">{r.id}</span>
+                              <span className="text-[10px] text-zinc-500 truncate max-w-[100px]">{r.host_name}</span>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                r.status === 'running' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                              }`} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {leaderboardAttempts.length === 0 ? (
-                  <div className="py-12 text-center text-xs text-zinc-500">
-                    No live contest records found yet. Host a session to populate leaderboard data!
-                  </div>
+                {/* Primary Authoritative Supabase Leaderboard */}
+                {selectedLeaderboardRoom ? (
+                  <LiveLeaderboard
+                    roomCode={selectedLeaderboardRoom}
+                    isHost={isHost}
+                    currentUserName={playerName}
+                    currentParticipantId={currentParticipantId}
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="text-zinc-500 uppercase font-mono border-b border-white/[0.08]">
-                        <tr>
-                          <th className="py-3 px-4">Rank</th>
-                          <th className="py-3 px-4">Participant</th>
-                          <th className="py-3 px-4">Assessment</th>
-                          <th className="py-3 px-4 text-right">Score</th>
-                          <th className="py-3 px-4 text-right">Accuracy</th>
-                          <th className="py-3 px-4 text-right">Time Taken</th>
-                          <th className="py-3 px-4 text-right">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/[0.04]">
-                        {leaderboardAttempts.map((att, idx) => (
-                          <tr key={att.id} className="hover:bg-white/[0.02]">
-                            <td className="py-3 px-4 font-mono font-bold text-white">
-                              #{idx + 1}
-                            </td>
-                            <td className="py-3 px-4 font-medium text-white">
-                              {att.playerName || 'Player'}
-                            </td>
-                            <td className="py-3 px-4 text-zinc-300">
-                              {att.quizTitle}
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono font-semibold text-white">
-                              {att.score} pts
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono text-emerald-400">
-                              {att.percentage}%
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono text-zinc-400">
-                              {formatTime(att.timeTakenSeconds)}
-                            </td>
-                            <td className="py-3 px-4 text-right text-zinc-500">
-                              {formatDate(att.completedAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="vesper-panel p-12 text-center text-xs text-zinc-500">
+                    Please select or enter a Room Code above to display the live class leaderboard.
                   </div>
                 )}
+
               </div>
             )}
 

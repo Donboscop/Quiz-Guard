@@ -7,10 +7,21 @@ import { formatTime, isQuestionCorrect, isQuestionAnswered, getOptionLetter, get
 import { Trophy, CheckCircle2, XCircle, MinusCircle, Clock, BookOpen, RefreshCw, ArrowLeft, Award, HelpCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
+import { LiveLeaderboard } from '../components/contest/LiveLeaderboard';
 
 export const Result = () => {
   const { id } = useParams();
-  const { latestResult, isContestMode, opponentName, opponentResult, playerName, participants } = useQuiz();
+  const { 
+    latestResult, 
+    isContestMode, 
+    opponentName, 
+    opponentResult, 
+    playerName, 
+    participants,
+    currentRoomCode,
+    currentParticipantId,
+    isHost
+  } = useQuiz();
 
   const result = latestResult || {
     score: 0,
@@ -107,6 +118,24 @@ export const Result = () => {
             </Link>
           </div>
         </motion.div>
+
+        {/* Live Multiplayer Official Class Leaderboard */}
+        {(isContestMode || currentRoomCode) && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="pt-2"
+          >
+            <LiveLeaderboard
+              roomCode={currentRoomCode}
+              isHost={isHost}
+              currentUserName={playerName}
+              currentParticipantId={currentParticipantId}
+              quizTitle={result.quizTitle}
+            />
+          </motion.div>
+        )}
 
       </div>
     </div>

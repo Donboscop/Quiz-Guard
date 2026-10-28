@@ -27,6 +27,12 @@ export const QuizProvider = ({ children }) => {
   const [questionTimes, setQuestionTimes] = useState({});
   const [latestResult, setLatestResult] = useState(null);
   const timerRef = useRef(null);
+  const sessionStatusRef = useRef(sessionStatus);
+  const submitQuizRef = useRef(null);
+
+  useEffect(() => {
+    sessionStatusRef.current = sessionStatus;
+  }, [sessionStatus]);
 
   // Supabase Connection & Live State
   const [supabaseStatus, setSupabaseStatus] = useState(
@@ -274,6 +280,12 @@ export const QuizProvider = ({ children }) => {
           ));
         }
       })
+      .on('broadcast', { event: 'CONTEST_ENDED' }, ({ payload }) => {
+        console.log("Contest ended broadcast received from instructor:", payload);
+        if (sessionStatusRef.current === 'in-progress' && submitQuizRef.current) {
+          submitQuizRef.current('Completed', 'Instructor concluded the live assessment.');
+        }
+      })
       // 4. Postgres Changes listeners (when tables are in publication)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
         fetchRoomParticipants(roomCode);
@@ -282,6 +294,10 @@ export const QuizProvider = ({ children }) => {
         if (payload.new && payload.new.status === 'running' && !isHostUser) {
           if (payload.new.end_at) {
             setAuthoritativeEndAt(new Date(payload.new.end_at).getTime());
+          }
+        } else if (payload.new && payload.new.status === 'completed' && !isHostUser) {
+          if (sessionStatusRef.current === 'in-progress' && submitQuizRef.current) {
+            submitQuizRef.current('Completed', 'Contest session concluded.');
           }
         }
       })
@@ -590,6 +606,97 @@ export const QuizProvider = ({ children }) => {
     }
   }, [activeQuiz, currentParticipantId]);
 
+  // Authoritative End Contest in Supabase (Host action or Timer expiration)
+  const endContestInSupabase = useCallback(async (roomCode) => {
+    const targetRoom = roomCode || currentRoomCode;
+    if (!targetRoom) return;
+
+    try {
+      console.log(`[Supabase] Finalizing live contest for room ${targetRoom}...`);
+      const endedAt = new Date().toISOString();
+
+      // 1. Update rooms status to 'completed'
+      await supabase.from('rooms').update({
+        status: 'completed',
+        end_at: endedAt
+      }).eq('id', targetRoom);
+
+      // 2. Fetch all participants for this room to calculate & persist results for any incomplete/joined participants
+      const { data: allParticipants, error: partsErr } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('room_id', targetRoom);
+
+      if (!partsErr && allParticipants && allParticipants.length > 0) {
+        const totalQ = activeQuiz?.questions?.length || 10;
+
+        for (const p of allParticipants) {
+          // If participant already completed or terminated with a valid result, preserve it!
+          if ((p.status === 'completed' || p.status === 'terminated') && p.result && p.result.score !== undefined) {
+            continue;
+          }
+
+          const rawStatus = (p.status || '').toLowerCase();
+          const isLobby = rawStatus === 'in-lobby' || rawStatus === 'did-not-start';
+          const pScore = Number(p.score || 0);
+          const correctCount = Math.round(pScore / 10);
+          const percentage = totalQ > 0 ? Math.round((correctCount / totalQ) * 100) : 0;
+          const status = isLobby ? 'did-not-start' : 'incomplete';
+
+          const finalResultObj = p.result || {
+            score: pScore,
+            totalQuestions: totalQ,
+            correctCount,
+            wrongCount: Math.max(0, totalQ - correctCount),
+            unansweredCount: isLobby ? totalQ : Math.max(0, totalQ - (p.current_question_index || 0)),
+            percentage,
+            status: isLobby ? 'Did Not Start' : 'Incomplete',
+            timeTakenSeconds: 0,
+            answers: {},
+            reason: isLobby ? 'Joined lobby but did not start assessment' : 'Session concluded by host or time expired'
+          };
+
+          await supabase.from('participants').update({
+            status,
+            score: pScore,
+            result: finalResultObj
+          }).eq('id', p.id);
+        }
+      }
+
+      // 3. Broadcast CONTEST_ENDED over Supabase Realtime channel
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'CONTEST_ENDED',
+          payload: {
+            roomCode: targetRoom,
+            endedAt
+          }
+        });
+      }
+
+      // 4. Also broadcast over PeerJS connections if active
+      const finishPayload = {
+        type: 'CONTEST_ENDED',
+        roomCode: targetRoom,
+        endedAt
+      };
+      if (connsRef.current) {
+        connsRef.current.forEach(c => {
+          try { c.send(finishPayload); } catch (e) { }
+        });
+      }
+
+      // Finalize host's test if in progress
+      if (sessionStatusRef.current === 'in-progress' && submitQuizRef.current) {
+        submitQuizRef.current('Completed', 'Host concluded session.');
+      }
+    } catch (e) {
+      console.error("Failed to end contest in Supabase:", e);
+    }
+  }, [currentRoomCode, activeQuiz]);
+
   // Server-Authoritative Timer Offset Calculation
   useEffect(() => {
     if (sessionStatus !== 'in-progress' || !authoritativeEndAt) return;
@@ -602,13 +709,18 @@ export const QuizProvider = ({ children }) => {
 
       if (remainingSec <= 0) {
         clearInterval(interval);
-        // Automatically lock test when authoritative deadline is reached
-        submitQuiz('Completed', 'Official contest time expired.');
+        // Automatically lock test and end session when authoritative deadline is reached
+        if (isHost && currentRoomCode) {
+          endContestInSupabase(currentRoomCode);
+        }
+        if (submitQuizRef.current) {
+          submitQuizRef.current('Completed', 'Official contest time expired.');
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [sessionStatus, authoritativeEndAt, clientServerOffset]);
+  }, [sessionStatus, authoritativeEndAt, clientServerOffset, isHost, currentRoomCode, endContestInSupabase]);
 
   // Progress Tracking: updates Supabase participants table and broadcasts over Realtime
   const trackParticipantProgress = useCallback(async (questionIndex) => {
@@ -1151,6 +1263,12 @@ export const QuizProvider = ({ children }) => {
   const submitQuiz = useCallback((status = 'Completed', customReason = null) => {
     if (!activeQuiz) return null;
 
+    // Prevent duplicate submissions from changing a finalized result
+    if (sessionStatusRef.current === 'completed' || sessionStatusRef.current === 'terminated') {
+      console.warn("Session already finalized. Duplicate submission prevented.");
+      return latestResult;
+    }
+
     setSessionStatus(status);
     clearInterval(timerRef.current);
 
@@ -1192,21 +1310,30 @@ export const QuizProvider = ({ children }) => {
     if (isContestMode && currentRoomCode) {
       const pId = currentParticipantId || playerName;
 
-      // 1. Persist result and status to participants table in Supabase
-      supabase.from('participants').update({
-        status: status === 'terminated' ? 'terminated' : 'completed',
-        score: calculated.score,
-        result: attemptData
-      }).match({ room_id: currentRoomCode, participant_id: pId })
-      .then(({ error }) => {
-        if (error) {
+      // Duplicate submission guard: check if already finalized in DB
+      supabase.from('participants').select('status, result').match({ room_id: currentRoomCode, participant_id: pId }).maybeSingle()
+        .then(({ data: existing }) => {
+          if (existing && (existing.status === 'completed' || existing.status === 'terminated') && existing.result) {
+            console.log("[Supabase] Participant result is already finalized. Duplicate submission ignored.");
+            return;
+          }
+
+          // 1. Persist result and status to participants table in Supabase
           supabase.from('participants').update({
             status: status === 'terminated' ? 'terminated' : 'completed',
             score: calculated.score,
             result: attemptData
-          }).match({ room_id: currentRoomCode, name: playerName });
-        }
-      });
+          }).match({ room_id: currentRoomCode, participant_id: pId })
+          .then(({ error }) => {
+            if (error) {
+              supabase.from('participants').update({
+                status: status === 'terminated' ? 'terminated' : 'completed',
+                score: calculated.score,
+                result: attemptData
+              }).match({ room_id: currentRoomCode, name: playerName });
+            }
+          });
+        });
 
       // 2. Persist to results table if present in schema
       supabase.from('results').upsert({
@@ -1258,7 +1385,7 @@ export const QuizProvider = ({ children }) => {
 
   // Terminate test due to focus violation
   const terminateQuiz = useCallback((reason) => {
-    if (!activeQuiz || sessionStatus !== 'in-progress') return null;
+    if (!activeQuiz || sessionStatusRef.current !== 'in-progress') return null;
 
     setSessionStatus('terminated');
     setTerminationReason(reason);
@@ -1383,6 +1510,11 @@ export const QuizProvider = ({ children }) => {
     return savedRecord;
   }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, currentRoomCode, currentParticipantId, playerName, opponentName, opponentResult, conn, isHost]);
 
+  // Keep submitQuizRef up to date for real-time remote callbacks
+  useEffect(() => {
+    submitQuizRef.current = submitQuiz;
+  }, [submitQuiz]);
+
   // Issue focus warning (tab switch, etc.)
   const issueFocusWarning = useCallback((title, message) => {
     setFocusWarnings(prev => {
@@ -1467,6 +1599,7 @@ export const QuizProvider = ({ children }) => {
       createRoomInSupabase,
       joinRoomInSupabase,
       startContestInSupabase,
+      endContestInSupabase,
       submitAnswerInSupabase,
       trackParticipantProgress,
       currentRoomCode,

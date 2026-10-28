@@ -106,6 +106,8 @@ export function App() {
                 <Route path="/ai-generator" element={<AiQuizGenerator />} />
                 <Route path="/quiz/ai-generator" element={<AiQuizGenerator />} />
                 <Route path="/contest" element={<ContestLobby />} />
+                <Route path="/contest/:roomCode/results" element={<ContestLobby />} />
+                <Route path="/contest/leaderboard" element={<ContestLobby />} />
 
                 <Route path="*" element={<NotFound />} />
               </Routes>

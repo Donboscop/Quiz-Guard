@@ -11,14 +11,17 @@ import { QuestionNavigator } from '../components/quiz/QuestionNavigator';
 import { FullscreenButton } from '../components/quiz/FullscreenButton';
 import { MobileNotice } from '../components/quiz/MobileNotice';
 import { ProgressBar } from '../components/common/ProgressBar';
+import { Button } from '../components/common/Button';
 import { isQuestionAnswered } from '../utils/quizUtils';
-import { Shield, Eye, Users } from 'lucide-react';
+import { Shield, Eye, Users, Lock, AlertCircle, RefreshCw } from 'lucide-react';
 
 export const QuizTest = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const quizContainerRef = useRef(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showEndSessionModal, setShowEndSessionModal] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
 
   const {
     activeQuiz,
@@ -26,6 +29,8 @@ export const QuizTest = () => {
     nextQuestion,
     prevQuestion,
     submitQuiz,
+    endContestInSupabase,
+    currentRoomCode,
     sessionStatus,
     startQuiz,
     issueFocusWarning,
@@ -107,6 +112,52 @@ export const QuizTest = () => {
         timeRemaining={timeRemaining}
       />
 
+      {/* Host End Live Session Modal */}
+      {showEndSessionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="vesper-panel max-w-md w-full p-6 space-y-4 border-red-900/40">
+            <div className="flex items-center gap-3 text-red-400">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-semibold text-white">End Assessment for All Participants?</h3>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              This will immediately conclude the live session for every student in room <strong className="font-mono text-white">{currentRoomCode}</strong>.
+              All active attempts and submissions will be finalized, and the authoritative class leaderboard will be published.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/[0.08]">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowEndSessionModal(false)}
+                disabled={endingSession}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={endingSession}
+                icon={endingSession ? RefreshCw : Lock}
+                onClick={async () => {
+                  setEndingSession(true);
+                  try {
+                    await endContestInSupabase(currentRoomCode);
+                    setShowEndSessionModal(false);
+                    navigate(`/quiz/${activeQuiz.id}/result`);
+                  } catch (e) {
+                    console.error("Error ending contest:", e);
+                  } finally {
+                    setEndingSession(false);
+                  }
+                }}
+              >
+                {endingSession ? 'Ending Assessment...' : 'End & Finalize All'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Proctoring Header */}
       <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-black/90 backdrop-blur-2xl px-4 py-3 sm:px-8">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -124,11 +175,27 @@ export const QuizTest = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
                   Live Monitored
                 </span>
+                {currentRoomCode && (
+                  <span className="text-[10px] font-mono text-zinc-500 bg-white/5 px-2 py-0.5 rounded border border-white/10">
+                    Room: {currentRoomCode}
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            {isHost && isContestMode && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="border-red-900/60 bg-red-950/30 text-red-300 hover:bg-red-950/60 hover:border-red-700/80 text-xs font-mono"
+                onClick={() => setShowEndSessionModal(true)}
+                icon={Lock}
+              >
+                End Assessment for All
+              </Button>
+            )}
             <FullscreenButton onExitFullscreen={() => {
               issueFocusWarning("Fullscreen Mode Exited", "Exiting fullscreen during a proctored assessment is recorded.");
             }} />

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { saveAttempt, saveCurrentQuizState, getCurrentQuizState, clearCurrentQuizState } from '../utils/storage';
 import { calculateResults, normalizeRoomCode } from '../utils/quizUtils';
 import { Peer } from 'peerjs';
-import { supabase } from '../lib/supabase';
+import { supabase, SUPABASE_STATUS, isSupabaseConfigured, checkSupabaseHealth } from '../lib/supabase';
 
 const QuizContext = createContext();
 
@@ -28,7 +28,16 @@ export const QuizProvider = ({ children }) => {
   const [latestResult, setLatestResult] = useState(null);
   const timerRef = useRef(null);
 
-  // Supabase & Server-Authoritative Timing states (FIX 1)
+  // Supabase Connection & Live State
+  const [supabaseStatus, setSupabaseStatus] = useState(
+    isSupabaseConfigured ? SUPABASE_STATUS.CONNECTING : SUPABASE_STATUS.ERROR
+  );
+  const [supabaseError, setSupabaseError] = useState(
+    isSupabaseConfigured ? null : 'Missing Supabase environment variables (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY).'
+  );
+  const [currentParticipantId, setCurrentParticipantId] = useState('');
+
+  // Server-Authoritative Timing states
   const [clientServerOffset, setClientServerOffset] = useState(0); // serverTime - Date.now()
   const [currentRoomCode, setCurrentRoomCode] = useState('');
   const [authoritativeEndAt, setAuthoritativeEndAt] = useState(null);
@@ -47,8 +56,9 @@ export const QuizProvider = ({ children }) => {
   const [playerName, setPlayerName] = useState('');
   const [opponentName, setOpponentName] = useState('');
 
-  // FIX 1: Server Time Synchronization (serverTime - Date.now())
+  // Server Time Synchronization (serverTime - Date.now())
   const syncServerTime = useCallback(async () => {
+    if (!isSupabaseConfigured) return 0;
     try {
       const startTime = Date.now();
       const { data, error } = await supabase.rpc('get_server_time');
@@ -66,9 +76,50 @@ export const QuizProvider = ({ children }) => {
     return 0;
   }, []);
 
-  useEffect(() => {
-    syncServerTime();
+  // Automatic Connection & Health Check Helper
+  const refreshSupabaseConnection = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setSupabaseStatus(SUPABASE_STATUS.ERROR);
+      setSupabaseError('Missing Supabase environment variables (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY).');
+      return { ok: false, status: SUPABASE_STATUS.ERROR };
+    }
+
+    setSupabaseStatus(SUPABASE_STATUS.CONNECTING);
+    setSupabaseError(null);
+
+    const health = await checkSupabaseHealth();
+    setSupabaseStatus(health.status);
+    setSupabaseError(health.error);
+
+    if (health.ok) {
+      syncServerTime();
+    }
+    return health;
   }, [syncServerTime]);
+
+  // Initial auto-connect and online/offline event listeners
+  useEffect(() => {
+    refreshSupabaseConnection();
+
+    const handleOnline = () => {
+      console.log("🌐 Network online: auto-reconnecting Supabase...");
+      refreshSupabaseConnection();
+    };
+
+    const handleOffline = () => {
+      console.warn("🌐 Network offline: Supabase disconnected.");
+      setSupabaseStatus(SUPABASE_STATUS.DISCONNECTED);
+      setSupabaseError('Network disconnected. Reconnecting automatically when internet restores...');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [refreshSupabaseConnection]);
 
   // Per-question timing ticker
   useEffect(() => {
@@ -115,9 +166,161 @@ export const QuizProvider = ({ children }) => {
     setAuthoritativeEndAt(null);
   }, [conn, peer]);
 
-  // FIX 1, 4 & 5: Supabase Atomic Room Creation & Joining (50 max capacity)
+  // Fetch participants for room directly from Supabase
+  const fetchRoomParticipants = useCallback(async (code) => {
+    if (!code || !isSupabaseConfigured) return;
+    try {
+      const { data, error } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('room_id', code);
+      if (!error && data) {
+        setParticipants(data.map(p => ({
+          id: p.participant_id || p.id,
+          name: p.name,
+          isHost: p.is_host,
+          status: p.status || 'in-lobby',
+          currentQuestionIndex: p.current_question_index || 0,
+          score: p.score || 0
+        })));
+      }
+    } catch (e) {
+      console.warn("fetchRoomParticipants fallback:", e);
+    }
+  }, []);
+
+  // Supabase Realtime Subscription Helper with automatic cleanup and reconnection
+  const subscribeToRoomRealtime = useCallback((roomCode, pId, name, isHostUser) => {
+    if (!roomCode || !isSupabaseConfigured) return;
+
+    // 1. Clean up existing channel if any
+    if (realtimeChannelRef.current) {
+      try {
+        supabase.removeChannel(realtimeChannelRef.current);
+      } catch (e) {}
+      realtimeChannelRef.current = null;
+    }
+
+    // Load initial participants from database
+    fetchRoomParticipants(roomCode);
+
+    const channel = supabase.channel(`room_${roomCode}`, {
+      config: { presence: { key: pId } }
+    });
+
+    // 2. Presence handling (instant online/offline tracking)
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlineUsers = [];
+        Object.keys(state).forEach(key => {
+          state[key].forEach(u => onlineUsers.push(u));
+        });
+
+        setParticipants(prev => {
+          const map = new Map();
+          // Keep existing from DB
+          prev.forEach(p => map.set(p.name, { ...p, status: p.status || 'offline' }));
+          // Overlay online users
+          onlineUsers.forEach(u => {
+            const existing = map.get(u.name);
+            map.set(u.name, {
+              id: u.pId || u.name,
+              name: u.name,
+              isHost: u.isHost,
+              status: existing?.status === 'completed' || existing?.status === 'terminated'
+                ? existing.status
+                : (existing?.status === 'in-progress' ? 'in-progress' : 'in-lobby'),
+              currentQuestionIndex: u.questionIndex ?? existing?.currentQuestionIndex ?? 0,
+              score: existing?.score || 0
+            });
+          });
+          return Array.from(map.values());
+        });
+      })
+      // 3. Broadcast events
+      .on('broadcast', { event: 'CONTEST_STARTED' }, ({ payload }) => {
+        if (payload && payload.quiz) {
+          setActiveQuiz(payload.quiz);
+          setCurrentQuestionIndex(0);
+          setUserAnswers({});
+          setQuestionTimes({});
+          setMarkedForReview([]);
+          setSessionStatus('in-progress');
+          setAuthoritativeEndAt(payload.endAt);
+          setIsContestMode(true);
+          setIsHost(false);
+        }
+      })
+      .on('broadcast', { event: 'PLAYER_PROGRESS' }, ({ payload }) => {
+        if (payload) {
+          setParticipants(prev => prev.map(p =>
+            p.name === payload.playerName || p.id === payload.participantId ? {
+              ...p,
+              currentQuestionIndex: payload.currentQuestionIndex,
+              status: payload.status || p.status
+            } : p
+          ));
+        }
+      })
+      .on('broadcast', { event: 'PLAYER_FINISHED' }, ({ payload }) => {
+        if (payload) {
+          setParticipants(prev => prev.map(p =>
+            p.name === payload.playerName || p.id === payload.participantId ? {
+              ...p,
+              status: payload.status || 'completed',
+              score: payload.score ?? p.score
+            } : p
+          ));
+        }
+      })
+      // 4. Postgres Changes listeners (when tables are in publication)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `room_id=eq.${roomCode}` }, () => {
+        fetchRoomParticipants(roomCode);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomCode}` }, (payload) => {
+        if (payload.new && payload.new.status === 'running' && !isHostUser) {
+          if (payload.new.end_at) {
+            setAuthoritativeEndAt(new Date(payload.new.end_at).getTime());
+          }
+        }
+      })
+      // 5. Subscription lifecycle & reconnection handling
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          setSupabaseStatus(SUPABASE_STATUS.CONNECTED);
+          setSupabaseError(null);
+          try {
+            await channel.track({
+              pId,
+              name,
+              isHost: isHostUser,
+              onlineAt: new Date().toISOString()
+            });
+          } catch (e) {}
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`Realtime channel status: ${status}. Supabase attempting auto-reconnect...`);
+          setSupabaseStatus(SUPABASE_STATUS.DISCONNECTED);
+        } else if (status === 'CLOSED') {
+          setSupabaseStatus(SUPABASE_STATUS.DISCONNECTED);
+        }
+      });
+
+    realtimeChannelRef.current = channel;
+  }, [fetchRoomParticipants]);
+
+  // Robust Supabase Room Creation
   const createRoomInSupabase = useCallback(async (quiz, duration, hostName) => {
-    if (!quiz || !hostName.trim()) return null;
+    if (!quiz || !hostName?.trim()) {
+      return { success: false, error: 'Quiz and educator name are required.' };
+    }
+
+    if (!isSupabaseConfigured) {
+      setSupabaseStatus(SUPABASE_STATUS.ERROR);
+      setSupabaseError('Missing Supabase environment variables (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY).');
+      return { success: false, error: 'Supabase configuration missing in environment variables.' };
+    }
+
     const roomCode = 'QG-' + Math.random().toString(36).substring(2, 7).toUpperCase();
     const hostId = 'host-' + Math.random().toString(36).substring(2, 9);
 
@@ -130,24 +333,42 @@ export const QuizProvider = ({ children }) => {
         host_name: hostName.trim(),
         status: 'lobby',
         duration: duration || quiz.duration || 10,
-        max_participants: 50
+        max_participants: 50,
+        security_settings: {
+          maxViolations: 3,
+          focusMonitoring: true,
+          fullscreenEnforced: true
+        }
       }]).select().single();
 
       if (roomErr) {
-        console.warn("Supabase room create error:", roomErr);
+        console.error("Supabase room create error:", roomErr);
+        setSupabaseStatus(SUPABASE_STATUS.ERROR);
+        setSupabaseError(roomErr.message || "Failed to create room in database.");
+        return { success: false, error: `Failed to create room: ${roomErr.message || 'Database error'}` };
       }
 
       // 2. Add Host to Participants Table
-      await supabase.from('participants').insert([{
+      const { error: partErr } = await supabase.from('participants').insert([{
         room_id: roomCode,
         participant_id: hostId,
         name: hostName.trim(),
         is_host: true,
-        status: 'in-lobby'
+        status: 'in-lobby',
+        score: 0,
+        current_question_index: 0
       }]);
+
+      if (partErr) {
+        console.warn("Supabase host participant create error:", partErr);
+      }
+
+      setSupabaseStatus(SUPABASE_STATUS.CONNECTED);
+      setSupabaseError(null);
 
       // Set local state
       setCurrentRoomCode(roomCode);
+      setCurrentParticipantId(hostId);
       setIsHost(true);
       setIsContestMode(true);
       setActiveQuiz(quiz);
@@ -158,82 +379,189 @@ export const QuizProvider = ({ children }) => {
         name: hostName.trim(),
         isHost: true,
         status: 'in-lobby',
-        currentQuestionIndex: 0
+        currentQuestionIndex: 0,
+        score: 0
       };
       setParticipants([hostEntry]);
 
       // Subscribe to Realtime Postgres & Presence channel
       subscribeToRoomRealtime(roomCode, hostId, hostName.trim(), true);
 
-      return roomCode;
+      return { success: true, roomCode };
     } catch (e) {
       console.error("Failed to create room in Supabase:", e);
-      return roomCode;
+      setSupabaseStatus(SUPABASE_STATUS.ERROR);
+      setSupabaseError(e.message || "Network error when creating room.");
+      return { success: false, error: e.message || 'Network error creating room. Please try again.' };
     }
-  }, []);
+  }, [subscribeToRoomRealtime]);
 
+  // Robust Supabase Room Joining
   const joinRoomInSupabase = useCallback(async (roomCode, participantName) => {
-    if (!roomCode?.trim() || !participantName?.trim()) return { success: false, error: 'Invalid details' };
+    if (!roomCode?.trim() || !participantName?.trim()) {
+      return { success: false, error: 'Please enter both your name and the room code.' };
+    }
     const cleanCode = normalizeRoomCode(roomCode);
+    if (!cleanCode || cleanCode.length < 5) {
+      return { success: false, error: 'Invalid room code format. Expected format: QG-XXXXX' };
+    }
+
+    if (!isSupabaseConfigured) {
+      return { success: false, error: 'Cloud service is not configured. Missing environment variables.' };
+    }
+
     const pId = 'p-' + Math.random().toString(36).substring(2, 9);
 
     try {
-      // FIX 5: Atomic 50-Player Capacity RPC Check
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc('join_room_atomic', {
-        p_room_code: cleanCode,
-        p_participant_id: pId,
-        p_name: participantName.trim()
-      });
+      // 1. Verify room exists and check status
+      const { data: room, error: roomErr } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', cleanCode)
+        .maybeSingle();
 
-      if (!rpcErr && rpcRes && rpcRes.success === false) {
-        return { success: false, error: rpcRes.error || 'Room is full! Maximum limit of 50 participants reached.' };
+      if (roomErr) {
+        console.error("Error querying room:", roomErr);
+        return { success: false, error: `Database error: ${roomErr.message || 'Unable to verify room'}` };
       }
 
-      // Fallback query if room is already active
-      const { data: room, error: roomErr } = await supabase.from('rooms').select('*').eq('id', cleanCode).single();
-      if (roomErr || !room) {
-        return { success: false, error: 'Room not found. Verify the Room Code.' };
+      if (!room) {
+        return { success: false, error: 'Room not found. Check code.' };
       }
 
-      if (room.status === 'running') {
-        // Reconnect / resume if contest is already running
-        return resumeContestSession(cleanCode, pId, participantName.trim(), room);
+      if (room.status === 'terminated' || room.status === 'completed') {
+        return { success: false, error: 'This contest has already ended.' };
       }
 
+      // 2. Try atomic join RPC if available (validates capacity)
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('join_room_atomic', {
+          p_room_code: cleanCode,
+          p_participant_id: pId,
+          p_name: participantName.trim()
+        });
+
+        if (!rpcErr && rpcRes && rpcRes.success === false) {
+          return { success: false, error: rpcRes.error || 'Room is full! Maximum limit of 50 participants reached.' };
+        }
+      } catch (rpcEx) {
+        console.warn("Atomic RPC fallback:", rpcEx);
+      }
+
+      // 3. Insert or update participant row in database safely
+      const initialStatus = room.status === 'running' ? 'in-progress' : 'in-lobby';
+      const { data: existingPart } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('room_id', cleanCode)
+        .eq('participant_id', pId)
+        .maybeSingle();
+
+      if (existingPart) {
+        await supabase
+          .from('participants')
+          .update({ name: participantName.trim(), status: initialStatus })
+          .eq('id', existingPart.id);
+      } else {
+        const { error: partErr } = await supabase
+          .from('participants')
+          .insert([{
+            room_id: cleanCode,
+            participant_id: pId,
+            name: participantName.trim(),
+            is_host: false,
+            status: initialStatus,
+            score: 0,
+            current_question_index: 0
+          }]);
+
+        if (partErr) {
+          console.warn("Participant insert note:", partErr);
+        }
+      }
+
+      setSupabaseStatus(SUPABASE_STATUS.CONNECTED);
+      setSupabaseError(null);
+
+      // 4. Set state
       setCurrentRoomCode(cleanCode);
+      setCurrentParticipantId(pId);
       setIsHost(false);
       setIsContestMode(true);
       setPlayerName(participantName.trim());
 
-      // Subscribe to Realtime Presence & Roster
+      // If contest is already running, resume
+      if (room.status === 'running') {
+        return resumeContestSession(cleanCode, pId, participantName.trim(), room);
+      }
+
+      // Subscribe to Realtime Presence & Channels
       subscribeToRoomRealtime(cleanCode, pId, participantName.trim(), false);
 
       return { success: true, roomCode: cleanCode };
     } catch (e) {
       console.error("Failed to join room in Supabase:", e);
-      return { success: true, roomCode: cleanCode };
+      return { success: false, error: e.message || 'Failed to connect to room. Please check your connection and try again.' };
     }
-  }, []);
+  }, [subscribeToRoomRealtime]);
 
-  // FIX 1 & 6: Authoritative Start Contest (rooms.start_at & rooms.end_at)
+  const resumeContestSession = async (roomCode, pId, name, room) => {
+    setCurrentRoomCode(roomCode);
+    setCurrentParticipantId(pId);
+    setIsContestMode(true);
+    setPlayerName(name);
+
+    let startAt = room.start_at ? new Date(room.start_at).getTime() : Date.now();
+    let endAt = room.end_at ? new Date(room.end_at).getTime() : startAt + (room.duration * 60 * 1000);
+
+    setAuthoritativeEndAt(endAt);
+    setSessionStatus('in-progress');
+    subscribeToRoomRealtime(roomCode, pId, name, false);
+    return { success: true, roomCode };
+  };
+
+  // Authoritative Start Contest
   const startContestInSupabase = useCallback(async (roomCode, selectedQuiz) => {
     if (!roomCode) return;
     const targetQuiz = selectedQuiz || activeQuiz;
     if (!targetQuiz) return;
 
     try {
-      // 1. Trigger Authoritative Server Start RPC
-      const { data: startRes } = await supabase.rpc('start_room_contest_authoritative', {
-        p_room_id: roomCode,
-        p_host_id: 'host'
-      });
+      const startAtTime = new Date().toISOString();
+      const endAtTime = new Date(Date.now() + (targetQuiz.duration * 60 * 1000)).toISOString();
 
-      let startAt = startRes?.start_at ? new Date(startRes.start_at).getTime() : Date.now();
-      let endAt = startRes?.end_at ? new Date(startRes.end_at).getTime() : startAt + (targetQuiz.duration * 60 * 1000);
+      // 1. Update rooms table in Supabase
+      await supabase.from('rooms').update({
+        status: 'running',
+        start_at: startAtTime,
+        end_at: endAtTime
+      }).eq('id', roomCode);
+
+      // 2. Trigger Authoritative Server Start RPC if present
+      let startAt = new Date(startAtTime).getTime();
+      let endAt = new Date(endAtTime).getTime();
+
+      try {
+        const { data: startRes } = await supabase.rpc('start_room_contest_authoritative', {
+          p_room_id: roomCode,
+          p_host_id: currentParticipantId || 'host'
+        });
+        if (startRes?.start_at) startAt = new Date(startRes.start_at).getTime();
+        if (startRes?.end_at) endAt = new Date(startRes.end_at).getTime();
+      } catch (rpcErr) {
+        console.warn("RPC start_room_contest_authoritative fallback:", rpcErr);
+      }
 
       setAuthoritativeEndAt(endAt);
 
-      // 2. Broadcast CONTEST_STARTED payload across Realtime
+      // 3. Update all joined participants in DB to 'in-progress'
+      try {
+        await supabase.from('participants').update({
+          status: 'in-progress'
+        }).eq('room_id', roomCode).eq('status', 'in-lobby');
+      } catch (e) {}
+
+      // 4. Broadcast CONTEST_STARTED payload across Realtime
       if (realtimeChannelRef.current) {
         realtimeChannelRef.current.send({
           type: 'broadcast',
@@ -260,9 +588,9 @@ export const QuizProvider = ({ children }) => {
     } catch (e) {
       console.error("Failed to start contest in Supabase:", e);
     }
-  }, [activeQuiz]);
+  }, [activeQuiz, currentParticipantId]);
 
-  // FIX 1: Server-Authoritative Timer Offset Calculation
+  // Server-Authoritative Timer Offset Calculation
   useEffect(() => {
     if (sessionStatus !== 'in-progress' || !authoritativeEndAt) return;
 
@@ -282,124 +610,70 @@ export const QuizProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [sessionStatus, authoritativeEndAt, clientServerOffset]);
 
-  // FIX 2: Progress Tracking (Accepts ONLY questionIndex, NO client scores!)
+  // Progress Tracking: updates Supabase participants table and broadcasts over Realtime
   const trackParticipantProgress = useCallback(async (questionIndex) => {
     if (!currentRoomCode) return;
-    try {
-      await supabase.rpc('update_participant_progress', {
-        p_room_id: currentRoomCode,
-        p_participant_id: playerName,
-        p_current_question_index: questionIndex
+    const pId = currentParticipantId || playerName;
+
+    // 1. Broadcast over Realtime channel (instantaneous)
+    if (realtimeChannelRef.current) {
+      realtimeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'PLAYER_PROGRESS',
+        payload: {
+          playerName,
+          participantId: pId,
+          currentQuestionIndex: questionIndex,
+          status: 'solving'
+        }
       });
+    }
 
-      if (realtimeChannelRef.current) {
-        realtimeChannelRef.current.send({
-          type: 'broadcast',
-          event: 'PLAYER_PROGRESS',
-          payload: {
-            playerName,
-            currentQuestionIndex: questionIndex,
-            status: 'solving'
-          }
-        });
-      }
-    } catch (e){}
-  }, [currentRoomCode, playerName]);
+    // 2. Persist to participants table in Supabase
+    try {
+      await supabase.from('participants').update({
+        current_question_index: questionIndex,
+        status: 'in-progress'
+      }).match({ room_id: currentRoomCode, participant_id: pId });
+    } catch (e) {
+      try {
+        await supabase.from('participants').update({
+          current_question_index: questionIndex,
+          status: 'in-progress'
+        }).match({ room_id: currentRoomCode, name: playerName });
+      } catch (err) {}
+    }
+  }, [currentRoomCode, currentParticipantId, playerName]);
 
-  // FIX 3: Secure Server-Side Answer Submission
+  // Server-Side Answer Submission with table fallback
   const submitAnswerInSupabase = useCallback(async (questionId, selectedOption) => {
     if (!currentRoomCode) return;
+    const pId = currentParticipantId || playerName;
+
     try {
-      const { data: res } = await supabase.rpc('submit_answer_secure', {
+      // 1. Try secure RPC if configured
+      const { data: res, error: rpcErr } = await supabase.rpc('submit_answer_secure', {
         p_room_id: currentRoomCode,
-        p_participant_id: playerName,
+        p_participant_id: pId,
         p_question_id: String(questionId),
         p_selected_answer: JSON.stringify(selectedOption)
       });
-      return res;
+      if (!rpcErr && res) return res;
+
+      // 2. Fallback: record answer in submissions table if exists
+      try {
+        await supabase.from('submissions').upsert({
+          room_id: currentRoomCode,
+          participant_id: pId,
+          question_id: String(questionId),
+          selected_answer: selectedOption,
+          submitted_at: new Date().toISOString()
+        }, { onConflict: 'room_id,participant_id,question_id' });
+      } catch (subErr) {}
     } catch (e) {
-      console.warn("Supabase answer submission fallback:", e);
+      console.warn("submitAnswerInSupabase fallback:", e);
     }
-  }, [currentRoomCode, playerName]);
-
-  // Realtime Presence & Channel Subscription Helper
-  const subscribeToRoomRealtime = (roomCode, pId, name, isHostUser) => {
-    const channel = supabase.channel(`room_${roomCode}`, {
-      config: { presence: { key: pId } }
-    });
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const onlineUsers = [];
-        Object.keys(state).forEach(key => {
-          state[key].forEach(u => onlineUsers.push(u));
-        });
-
-        setParticipants(prev => {
-          const map = new Map();
-          prev.forEach(p => map.set(p.name, { ...p, status: 'offline' }));
-          onlineUsers.forEach(u => {
-            map.set(u.name, {
-              id: u.pId || u.name,
-              name: u.name,
-              isHost: u.isHost,
-              status: 'in-lobby',
-              currentQuestionIndex: u.questionIndex || 0
-            });
-          });
-          return Array.from(map.values());
-        });
-      })
-      .on('broadcast', { event: 'CONTEST_STARTED' }, ({ payload }) => {
-        if (payload && payload.quiz) {
-          setActiveQuiz(payload.quiz);
-          setCurrentQuestionIndex(0);
-          setUserAnswers({});
-          setQuestionTimes({});
-          setMarkedForReview([]);
-          setSessionStatus('in-progress');
-          setAuthoritativeEndAt(payload.endAt);
-          setIsContestMode(true);
-          setIsHost(false);
-        }
-      })
-      .on('broadcast', { event: 'PLAYER_PROGRESS' }, ({ payload }) => {
-        if (payload) {
-          setParticipants(prev => prev.map(p => p.name === payload.playerName ? {
-            ...p,
-            currentQuestionIndex: payload.currentQuestionIndex,
-            status: payload.status
-          } : p));
-        }
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            pId,
-            name,
-            isHost: isHostUser,
-            onlineAt: new Date().toISOString()
-          });
-        }
-      });
-
-    realtimeChannelRef.current = channel;
-  };
-
-  const resumeContestSession = async (roomCode, pId, name, room) => {
-    setCurrentRoomCode(roomCode);
-    setIsContestMode(true);
-    setPlayerName(name);
-
-    let startAt = room.start_at ? new Date(room.start_at).getTime() : Date.now();
-    let endAt = room.end_at ? new Date(room.end_at).getTime() : startAt + (room.duration * 60 * 1000);
-
-    setAuthoritativeEndAt(endAt);
-    setSessionStatus('in-progress');
-    subscribeToRoomRealtime(roomCode, pId, name, false);
-    return { success: true, roomCode };
-  };
+  }, [currentRoomCode, currentParticipantId, playerName]);
 
   // Host helper to broadcast data to all connected guests
   const broadcastToAll = useCallback((payload) => {
@@ -915,7 +1189,53 @@ export const QuizProvider = ({ children }) => {
     setLatestResult(savedRecord);
     clearCurrentQuizState();
 
-    if (isContestMode) {
+    if (isContestMode && currentRoomCode) {
+      const pId = currentParticipantId || playerName;
+
+      // 1. Persist result and status to participants table in Supabase
+      supabase.from('participants').update({
+        status: status === 'terminated' ? 'terminated' : 'completed',
+        score: calculated.score,
+        result: attemptData
+      }).match({ room_id: currentRoomCode, participant_id: pId })
+      .then(({ error }) => {
+        if (error) {
+          supabase.from('participants').update({
+            status: status === 'terminated' ? 'terminated' : 'completed',
+            score: calculated.score,
+            result: attemptData
+          }).match({ room_id: currentRoomCode, name: playerName });
+        }
+      });
+
+      // 2. Persist to results table if present in schema
+      supabase.from('results').upsert({
+        room_id: currentRoomCode,
+        participant_id: pId,
+        player_name: playerName.trim() || 'Player',
+        score: calculated.score,
+        total_questions: calculated.totalQuestions,
+        correct_count: calculated.correctCount,
+        wrong_count: calculated.wrongCount,
+        percentage: calculated.percentage,
+        time_taken_seconds: calculated.timeTakenSeconds,
+        status: status
+      }, { onConflict: 'room_id,participant_id' }).then(() => {}).catch(() => {});
+
+      // 3. Broadcast PLAYER_FINISHED across Realtime
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'PLAYER_FINISHED',
+          payload: {
+            playerName: playerName.trim() || 'Player',
+            participantId: pId,
+            score: calculated.score,
+            status: status
+          }
+        });
+      }
+
       const finishPayload = {
         type: 'FINISH_CONTEST',
         result: attemptData
@@ -934,7 +1254,7 @@ export const QuizProvider = ({ children }) => {
     }
 
     return savedRecord;
-  }, [activeQuiz, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
+  }, [activeQuiz, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, currentRoomCode, currentParticipantId, playerName, opponentName, opponentResult, conn, isHost]);
 
   // Terminate test due to focus violation
   const terminateQuiz = useCallback((reason) => {
@@ -986,7 +1306,63 @@ export const QuizProvider = ({ children }) => {
       type: 'warning'
     });
 
-    if (isContestMode) {
+    if (isContestMode && currentRoomCode) {
+      const pId = currentParticipantId || playerName;
+
+      // 1. Update participants table in Supabase
+      supabase.from('participants').update({
+        status: 'terminated',
+        score: calculated.score,
+        result: attemptData
+      }).match({ room_id: currentRoomCode, participant_id: pId })
+      .then(({ error }) => {
+        if (error) {
+          supabase.from('participants').update({
+            status: 'terminated',
+            score: calculated.score,
+            result: attemptData
+          }).match({ room_id: currentRoomCode, name: playerName });
+        }
+      });
+
+      // 2. Persist to results table if present
+      supabase.from('results').upsert({
+        room_id: currentRoomCode,
+        participant_id: pId,
+        player_name: playerName.trim() || 'Player',
+        score: calculated.score,
+        total_questions: calculated.totalQuestions,
+        correct_count: calculated.correctCount,
+        wrong_count: calculated.wrongCount,
+        percentage: calculated.percentage,
+        time_taken_seconds: calculated.timeTakenSeconds,
+        status: 'Terminated'
+      }, { onConflict: 'room_id,participant_id' }).then(() => {}).catch(() => {});
+
+      // 3. Log to proctor_events table if present
+      try {
+        supabase.from('proctor_events').insert([{
+          room_id: currentRoomCode,
+          participant_id: pId,
+          event_type: 'focus_terminated',
+          violation_count: focusWarnings + 1
+        }]).then(() => {}).catch(() => {});
+      } catch (e) {}
+
+      // 4. Broadcast across Realtime
+      if (realtimeChannelRef.current) {
+        realtimeChannelRef.current.send({
+          type: 'broadcast',
+          event: 'PLAYER_FINISHED',
+          payload: {
+            playerName: playerName.trim() || 'Player',
+            participantId: pId,
+            score: calculated.score,
+            status: 'terminated'
+          }
+        });
+      }
+
       const termPayload = {
         type: 'TERMINATE_CONTEST',
         result: attemptData
@@ -1005,12 +1381,25 @@ export const QuizProvider = ({ children }) => {
     }
 
     return savedRecord;
-  }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, playerName, opponentName, opponentResult, conn, isHost]);
+  }, [activeQuiz, sessionStatus, userAnswers, questionTimes, timeRemaining, focusWarnings, isContestMode, currentRoomCode, currentParticipantId, playerName, opponentName, opponentResult, conn, isHost]);
 
   // Issue focus warning (tab switch, etc.)
   const issueFocusWarning = useCallback((title, message) => {
     setFocusWarnings(prev => {
       const nextCount = prev + 1;
+
+      // Log violation to Supabase proctor_events if in multiplayer
+      if (isContestMode && currentRoomCode) {
+        try {
+          supabase.from('proctor_events').insert([{
+            room_id: currentRoomCode,
+            participant_id: currentParticipantId || playerName,
+            event_type: 'focus_warning',
+            violation_count: nextCount
+          }]).then(() => {}).catch(() => {});
+        } catch (e) {}
+      }
+
       // Allow 2 focus warnings before termination on 3rd violation
       if (nextCount >= 3) {
         terminateQuiz("Multiple focus violations detected (tab switching / window defocus).");
@@ -1024,7 +1413,7 @@ export const QuizProvider = ({ children }) => {
       }
       return nextCount;
     });
-  }, [terminateQuiz]);
+  }, [isContestMode, currentRoomCode, currentParticipantId, playerName, terminateQuiz]);
 
   const closeWarningModal = useCallback(() => {
     setWarningModal(prev => ({ ...prev, isOpen: false }));
@@ -1081,7 +1470,11 @@ export const QuizProvider = ({ children }) => {
       submitAnswerInSupabase,
       trackParticipantProgress,
       currentRoomCode,
-      clientServerOffset
+      currentParticipantId,
+      clientServerOffset,
+      supabaseStatus,
+      supabaseError,
+      refreshSupabaseConnection
     }}>
       {children}
     </QuizContext.Provider>

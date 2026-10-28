@@ -366,11 +366,51 @@ ALTER TABLE quiz_answer_keys ENABLE ROW LEVEL SECURITY;
 
 -- Allow public reads on active rooms, participants & results
 CREATE POLICY "Allow public select on rooms" ON rooms FOR SELECT USING (true);
-CREATE POLICY "Allow public select on participants" ON participants FOR SELECT USING (true);
-CREATE POLICY "Allow public select on results" ON results FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on rooms" ON rooms FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on rooms" ON rooms FOR UPDATE USING (true);
 
--- Allow participants to read their own submissions
+CREATE POLICY "Allow public select on participants" ON participants FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on participants" ON participants FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on participants" ON participants FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public select on results" ON results FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on results" ON results FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on results" ON results FOR UPDATE USING (true);
+
+-- Allow participants to read and insert their own submissions
 CREATE POLICY "Allow participant read own submissions" ON submissions FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on submissions" ON submissions FOR INSERT WITH CHECK (true);
+
+-- Proctor events
+CREATE POLICY "Allow public select on proctor_events" ON proctor_events FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on proctor_events" ON proctor_events FOR INSERT WITH CHECK (true);
 
 -- Deny normal SELECT reads on quiz_answer_keys to protect answer keys
 CREATE POLICY "Deny public select on answer keys" ON quiz_answer_keys FOR SELECT USING (false);
+
+-- ====================================================================
+-- 5. SUPABASE REALTIME REPLICATION CONFIGURATION
+-- ====================================================================
+-- Enable table replica identity for Realtime updates
+ALTER TABLE rooms REPLICA IDENTITY FULL;
+ALTER TABLE participants REPLICA IDENTITY FULL;
+ALTER TABLE results REPLICA IDENTITY FULL;
+
+-- Add tables to the supabase_realtime publication idempotently
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE rooms;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE participants;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE results;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;

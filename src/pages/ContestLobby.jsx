@@ -31,7 +31,10 @@ export const ContestLobby = () => {
     startContestInSupabase,
     currentRoomCode,
     activeQuiz,
-    sessionStatus
+    sessionStatus,
+    supabaseStatus,
+    supabaseError,
+    refreshSupabaseConnection
   } = useQuiz();
 
   const [activeTab, setActiveTab] = useState('host'); // 'host' | 'join' | 'leaderboard'
@@ -97,14 +100,15 @@ export const ContestLobby = () => {
     setLobbyError(null);
 
     const targetQuiz = quizzes.find(q => q.id === selectedQuizId) || quizzes[0];
-    const generatedCode = await createRoomInSupabase(targetQuiz, targetQuiz?.duration || 10, hostNickname.trim());
-    
+    const res = await createRoomInSupabase(targetQuiz, targetQuiz?.duration || 10, hostNickname.trim());
+    const generatedCode = typeof res === 'string' ? res : res?.roomCode;
+
     if (generatedCode) {
       setRoomCode(generatedCode);
       setIsLobbyActive(true);
       setLoading(false);
     } else {
-      setLobbyError("Failed to initialize live room. Please try again.");
+      setLobbyError(res?.error || "Failed to initialize live room. Please check cloud connection.");
       setLoading(false);
     }
   };
@@ -152,10 +156,46 @@ export const ContestLobby = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
                 Real-Time Synchronization
               </span>
+
+              {/* Supabase Connection State Indicator */}
+              {supabaseStatus === 'connected' && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Cloud Connected
+                </span>
+              )}
+              {supabaseStatus === 'connecting' && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/60">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-amber-400" />
+                  Connecting to Supabase...
+                </span>
+              )}
+              {supabaseStatus === 'disconnected' && (
+                <button
+                  type="button"
+                  onClick={refreshSupabaseConnection}
+                  title="Click to reconnect"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-orange-950/80 text-orange-300 border border-orange-800/60 hover:bg-orange-900/80 cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                  Disconnected (Retry)
+                </button>
+              )}
+              {supabaseStatus === 'error' && (
+                <button
+                  type="button"
+                  onClick={refreshSupabaseConnection}
+                  title={supabaseError || "Click to retry connection"}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-red-950/80 text-red-300 border border-red-800/60 hover:bg-red-900/80 cursor-pointer"
+                >
+                  <AlertCircle className="w-3 h-3 text-red-400" />
+                  Cloud Error (Retry)
+                </button>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white mt-1.5">
               Live Multiplayer Arena

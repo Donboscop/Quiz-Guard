@@ -20,7 +20,10 @@ export const JoinQuiz = () => {
     participants,
     playerName,
     setPlayerName,
-    resetMultiplayer
+    resetMultiplayer,
+    supabaseStatus,
+    supabaseError,
+    refreshSupabaseConnection
   } = useQuiz();
 
   const [inputName, setInputName] = useState(playerName || '');
@@ -70,7 +73,7 @@ export const JoinQuiz = () => {
       setIsInWaitingLobby(true);
       setIsJoining(false);
     } else {
-      setErrorMessage(result?.error || 'Failed to join room. Please check the code or contact host.');
+      setErrorMessage(result?.error || 'Room not found. Check code.');
       setIsJoining(false);
     }
   };
@@ -99,11 +102,47 @@ export const JoinQuiz = () => {
               <p className="text-xs text-zinc-400">
                 Enter your name and the room code provided by your educator.
               </p>
+
+              {/* Connection Status Pill */}
+              <div className="flex justify-center pt-1">
+                {supabaseStatus === 'connected' && (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live Cloud Ready
+                  </span>
+                )}
+                {supabaseStatus === 'connecting' && (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/60">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin text-amber-400" />
+                    Connecting to Cloud...
+                  </span>
+                )}
+                {supabaseStatus === 'disconnected' && (
+                  <button
+                    type="button"
+                    onClick={refreshSupabaseConnection}
+                    className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-orange-950/80 text-orange-300 border border-orange-800/60 hover:bg-orange-900/80 cursor-pointer"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                    Offline (Tap to Reconnect)
+                  </button>
+                )}
+                {supabaseStatus === 'error' && (
+                  <button
+                    type="button"
+                    onClick={refreshSupabaseConnection}
+                    className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-red-950/80 text-red-300 border border-red-800/60 hover:bg-red-900/80 cursor-pointer"
+                  >
+                    <AlertCircle className="w-2.5 h-2.5 text-red-400" />
+                    Connection Error (Tap to Retry)
+                  </button>
+                )}
+              </div>
             </div>
 
             {errorMessage && (
               <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
                 <span>{errorMessage}</span>
               </div>
             )}
